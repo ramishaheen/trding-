@@ -13,19 +13,35 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+          cache: pip
       - name: Install test deps
         run: pip install pytest requests
-      - name: Run unit tests (dependency-free logic)
+      - name: Run unit tests
         run: pytest -q
+      - name: Compile-check all modules (catches errors in code not run by tests)
+        run: |
+          python -m compileall -q \
+            execution risk_governor weekly_target_manager research risk \
+            dashboard user_data/strategies scripts trade_pipeline.py
 
   validate:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Validate Freqtrade config JSON
-        run: python -c "import json; json.load(open('user_data/config.json')); print('config.json valid')"
-      - name: Validate docker-compose
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Validate JSON config files
+        run: |
+          python - <<'PY'
+          import json
+          for f in ["user_data/config.json", "risk_config.json", "weekly_target_config.json"]:
+              json.load(open(f))
+              print("ok:", f)
+          PY
+      - name: Validate docker-compose (incl. public + live-browser profiles)
         run: |
           cp .env.example .env
-          docker compose config -q && echo "compose valid"
+          docker compose --profile public --profile live-browser config -q
           rm -f .env
+          echo "compose valid"
