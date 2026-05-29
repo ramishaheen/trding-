@@ -37,18 +37,19 @@ def _connect():
 
 
 # --- orders ----------------------------------------------------------------
-def enqueue_order(decision: Decision, stake: float) -> int:
+def enqueue_order(decision: Decision, stake: float, meta: Optional[dict] = None) -> int:
     with _connect() as conn, conn.cursor() as cur:
         cur.execute(
             """
             INSERT INTO execution_orders
-                (status, action, pair, side, order_type, stake, amount, price, tag)
-            VALUES ('pending', %s, %s, %s, %s, %s, %s, %s, %s)
+                (status, action, pair, side, order_type, stake, amount, price, tag, meta)
+            VALUES ('pending', %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb)
             RETURNING id
             """,
             (
                 decision.action, decision.pair, decision.side, decision.order_type,
                 stake, decision.amount, decision.price, decision.tag,
+                json.dumps(meta or {}),
             ),
         )
         order_id = cur.fetchone()[0]
@@ -66,15 +67,43 @@ def claim_next_pending() -> Optional[dict]:
                 SELECT id FROM execution_orders WHERE status='pending'
                 ORDER BY id ASC FOR UPDATE SKIP LOCKED LIMIT 1
             )
-            RETURNING id, action, pair, side, order_type, stake, amount, price, tag
+            RETURNING id, action, pair, side, order_type, stake, amount, price, tag, meta
             """
         )
         row = cur.fetchone()
         conn.commit()
     if not row:
         return None
-    cols = ["id", "action", "pair", "side", "order_type", "stake", "amount", "price", "tag"]
+    cols = ["id", "action", "pair", "side", "order_type", "stake", "amount", "price", "tag", "meta"]
     return dict(zip(cols, row))
+
+
+# --- status objects (for the dashboard) ------------------------------------
+def write_status(key: str, obj: dict) -> None:
+    try:
+        with _connect() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO system_flags (key, value, reason, updated_at)
+                VALUES (%s, %s, '', now())
+                ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value, updated_at=now()
+                """,
+                (key, json.dumps(obj, default=str)),
+            )
+            conn.commit()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("write_status(%s) failed: %s", key, exc)
+
+
+def read_status(key: str) -> Optional[dict]:
+    try:
+        with _connect() as conn, conn.cursor() as cur:
+            cur.execute("SELECT value FROM system_flags WHERE key=%s", (key,))
+            row = cur.fetchone()
+            return json.loads(row[0]) if row else None
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("read_status(%s) failed: %s", key, exc)
+        return None
 
 
 def finish_order(order_id: int, status: str, detail: str = "") -> None:

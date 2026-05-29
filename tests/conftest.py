@@ -5,6 +5,7 @@ import os
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, ROOT)  # repo root, for `import risk_governor`
 sys.path.insert(0, os.path.join(ROOT, "user_data", "strategies"))
 sys.path.insert(0, os.path.join(ROOT, "risk"))
 sys.path.insert(0, os.path.join(ROOT, "research"))

@@ -72,6 +72,19 @@ services:
       - .env
     command: ["python", "-u", "risk/watchdog.py"]
 
+  dashboard:
+    build:
+      context: .
+      dockerfile: dashboard/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - .env
+    ports:
+      - "8050:8050"   # polished risk dashboard (read-only + STOP)
+
   # ---------------------------------------------------------------------------
   # LIVE browser-execution path (REAL MONEY). Gated behind the "live-browser"
   # compose profile AND the LIVE_BROWSER_TRADING_ENABLED env flag, so it never

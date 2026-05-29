@@ -144,6 +144,9 @@ def validate_context(text: str, model: str) -> dict[str, Any]:
         raise ValueError(f"invalid risk_state: {risk_state!r}")
     confidence = float(data.get("confidence", 0.0))
     confidence = max(0.0, min(1.0, confidence))
+    sentiment = float(data.get("sentiment", 0.0))
+    sentiment = max(-1.0, min(1.0, sentiment))
+    pause_trading = bool(data.get("pause_trading", False))
     rationale = str(data.get("rationale", ""))[:1000]
     notable = data.get("notable_events", [])
     if not isinstance(notable, list):
@@ -154,6 +157,8 @@ def validate_context(text: str, model: str) -> dict[str, Any]:
         "regime": regime,
         "risk_state": risk_state,
         "confidence": confidence,
+        "sentiment": sentiment,
+        "pause_trading": pause_trading,
         "rationale": rationale,
         "notable_events": notable,
         "source_model": model,
@@ -173,14 +178,16 @@ def store_context(ctx: dict[str, Any], headlines: list[str]) -> None:
             cur.execute(
                 """
                 INSERT INTO market_context
-                    (regime, risk_state, confidence, rationale,
-                     notable_events, source_model, headlines_hash)
-                VALUES (%s, %s, %s, %s, %s::jsonb, %s, %s)
+                    (regime, risk_state, confidence, sentiment, pause_trading,
+                     rationale, notable_events, source_model, headlines_hash)
+                VALUES (%s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s)
                 """,
                 (
                     ctx["regime"],
                     ctx["risk_state"],
                     ctx["confidence"],
+                    ctx["sentiment"],
+                    ctx["pause_trading"],
                     ctx["rationale"],
                     json.dumps(ctx["notable_events"]),
                     ctx["source_model"],

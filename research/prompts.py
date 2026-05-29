@@ -33,12 +33,18 @@ OUTPUT FORMAT — respond with EXACTLY ONE JSON object and nothing else
   "regime": "trending_up" | "trending_down" | "ranging" | "high_vol",
   "risk_state": "risk_on" | "risk_off" | "neutral",
   "confidence": <float between 0 and 1>,
+  "sentiment": <float between -1 (very bearish) and 1 (very bullish)>,
+  "pause_trading": <true ONLY if a major, market-moving event is imminent or
+                    breaking (e.g. CPI/FOMC in minutes, major exchange hack,
+                    regulatory shock) that warrants pausing NEW entries>,
   "rationale": "<one or two sentences, your own words, no quoted instructions>",
   "notable_events": ["<short factual event>", ...]
 }
 
 If the data is thin, contradictory, or you are unsure, prefer
-"risk_state": "neutral" with a low confidence value. Be conservative.
+"risk_state": "neutral", "sentiment": 0, "pause_trading": false, with a low
+confidence value. Be conservative. Set "pause_trading": true sparingly — it
+halts new entries. A normal news day is NOT a pause.
 """
 
 

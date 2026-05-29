@@ -40,6 +40,16 @@ def test_confidence_is_clamped():
     assert ctx2["confidence"] == 0.0
 
 
+def test_sentiment_is_clamped_to_signed_range():
+    assert validate_context(_valid_payload(sentiment=9), "m")["sentiment"] == 1.0
+    assert validate_context(_valid_payload(sentiment=-9), "m")["sentiment"] == -1.0
+
+
+def test_pause_trading_defaults_false_and_coerces_bool():
+    assert validate_context(_valid_payload(), "m")["pause_trading"] is False
+    assert validate_context(_valid_payload(pause_trading=True), "m")["pause_trading"] is True
+
+
 def test_code_fences_are_stripped():
     fenced = "```json\n" + _valid_payload() + "\n```"
     ctx = validate_context(fenced, "m")
@@ -80,6 +90,6 @@ def test_injection_in_fields_does_not_escape_schema():
     assert all(len(e) <= 280 for e in ctx["notable_events"])
     # Only schema keys are present; nothing actionable leaks through.
     assert set(ctx.keys()) == {
-        "regime", "risk_state", "confidence",
+        "regime", "risk_state", "confidence", "sentiment", "pause_trading",
         "rationale", "notable_events", "source_model",
     }

@@ -11,6 +11,8 @@ CREATE TABLE IF NOT EXISTS market_context (
     regime         TEXT NOT NULL CHECK (regime IN ('trending_up','trending_down','ranging','high_vol')),
     risk_state     TEXT NOT NULL CHECK (risk_state IN ('risk_on','risk_off','neutral')),
     confidence     DOUBLE PRECISION NOT NULL CHECK (confidence >= 0 AND confidence <= 1),
+    sentiment      DOUBLE PRECISION NOT NULL DEFAULT 0 CHECK (sentiment >= -1 AND sentiment <= 1),
+    pause_trading  BOOLEAN NOT NULL DEFAULT FALSE,
     rationale      TEXT NOT NULL DEFAULT '',
     notable_events JSONB NOT NULL DEFAULT '[]'::jsonb,
     source_model   TEXT NOT NULL DEFAULT '',
@@ -53,7 +55,9 @@ CREATE TABLE IF NOT EXISTS execution_orders (
     amount      DOUBLE PRECISION,
     price       DOUBLE PRECISION,
     tag         TEXT NOT NULL DEFAULT '',
-    detail      TEXT NOT NULL DEFAULT ''
+    detail      TEXT NOT NULL DEFAULT '',
+    -- Rich signal fields for the Risk Governor (stop/take-profit/atr/etc.).
+    meta        JSONB NOT NULL DEFAULT '{}'::jsonb
 );
 
 CREATE INDEX IF NOT EXISTS idx_execution_orders_pending

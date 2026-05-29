@@ -28,7 +28,7 @@ strategy, come from already-closed candles only.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Sequence
+from typing import Optional, Sequence
 
 
 # ---------------------------------------------------------------------------
@@ -209,6 +209,89 @@ def atr_stoploss_ratio(entry_price: float, atr_value: float, params: StrategyPar
 
 
 # ---------------------------------------------------------------------------
+# Risk-based position sizing (the highest-leverage discipline upgrade)
+# ---------------------------------------------------------------------------
+@dataclass(frozen=True)
+class SizingConfig:
+    capital: float                       # account equity in quote (USDT)
+    risk_per_trade_pct: float = 0.01     # risk 1% of capital per trade
+    max_stake: float = 100.0             # hard per-trade stake cap (quote)
+    min_stake: float = 10.0              # venue minimum (quote); below -> skip
+    max_stake_pct_of_capital: float = 0.25  # never >25% of capital in one trade
+
+
+def risk_based_stake(entry_price: float, stop_price: float, cfg: SizingConfig) -> float:
+    """Quote-currency stake such that being stopped out costs ~risk_per_trade_pct
+    of capital. Size is driven by the distance to the stop, not a flat amount.
+
+        risk_amount        = capital * risk_per_trade_pct
+        stop_distance_frac = (entry - stop) / entry
+        notional           = risk_amount / stop_distance_frac
+
+    Clamped by max_stake and max_stake_pct_of_capital; returns 0 (skip) if the
+    sized notional would fall below min_stake or the stop is invalid.
+    """
+    if entry_price <= 0 or cfg.capital <= 0:
+        return 0.0
+    if stop_price <= 0 or stop_price >= entry_price:
+        return 0.0
+    stop_distance_frac = (entry_price - stop_price) / entry_price
+    if stop_distance_frac <= 0:
+        return 0.0
+    notional = (cfg.capital * cfg.risk_per_trade_pct) / stop_distance_frac
+    notional = min(notional, cfg.max_stake, cfg.capital * cfg.max_stake_pct_of_capital)
+    return notional if notional >= cfg.min_stake else 0.0
+
+
+# ---------------------------------------------------------------------------
+# Volatility filter + market-microstructure detectors (entry quality)
+# ---------------------------------------------------------------------------
+def volatility_filter_ok(atr_value: float, close: float, max_atr_pct: float) -> bool:
+    """True when volatility is within sane bounds. Skipping entries in
+    chaotic, high-ATR conditions is one of the cheapest edges available."""
+    if close <= 0:
+        return False
+    return (atr_value / close) <= max_atr_pct
+
+
+def liquidity_sweep_long(prior_low: float, low: float, close: float, open_: float) -> bool:
+    """Detect a bullish liquidity sweep (stop hunt): price dips BELOW the prior
+    low (sweeping resting stops) but CLOSES back above it with a green body.
+    Often a higher-quality long entry than a naive breakout."""
+    swept = low < prior_low
+    reclaimed = close > prior_low
+    bullish_body = close >= open_
+    return swept and reclaimed and bullish_body
+
+
+def fake_breakout_up(prior_high: float, high: float, close: float) -> bool:
+    """Detect a failed/false upside breakout: price pokes ABOVE the prior high
+    but CLOSES back below it. A reason to NOT chase the breakout long."""
+    poked = high > prior_high
+    failed = close < prior_high
+    return poked and failed
+
+
+def regime_from_prices(
+    close: float,
+    ema_slow: float,
+    ema_trend: float,
+    atr_value: float,
+    high_vol_atr_pct: float = 0.05,
+) -> str:
+    """Deterministic regime classifier used to CROSS-CHECK the LLM signal so the
+    system never depends solely on the model. Returns one of:
+    trending_up | trending_down | ranging | high_vol."""
+    if close > 0 and (atr_value / close) >= high_vol_atr_pct:
+        return "high_vol"
+    if close > ema_trend and ema_slow > ema_trend:
+        return "trending_up"
+    if close < ema_trend and ema_slow < ema_trend:
+        return "trending_down"
+    return "ranging"
+
+
+# ---------------------------------------------------------------------------
 # LLM market-context SOFT gate
 # ---------------------------------------------------------------------------
 @dataclass
@@ -224,16 +307,22 @@ def apply_context_gate(
     risk_state: str | None,
     confidence: float | None,
     params: StrategyParams,
+    pause_trading: bool = False,
 ) -> ContextGate:
     """Translate the latest market_context row into an entry gate.
 
     Rules (soft — restrict only):
-      * risk_off            -> block new entries
-      * neutral             -> half stake
-      * confidence below min-> block new entries
-      * missing context     -> allow (fail-open on *information*, but the hard
-                               risk watchdog and on-exchange stops still apply)
+      * pause_trading=True   -> block new entries (NEWS PAUSE MODE)
+      * risk_off             -> block new entries
+      * neutral              -> half stake
+      * confidence below min -> block new entries
+      * missing context      -> allow (fail-open on *information*, but the hard
+                                risk watchdog and on-exchange stops still apply)
     """
+    # News pause mode: the sidecar flagged a high-impact event window.
+    if pause_trading:
+        return ContextGate(False, 0.0, "news_pause")
+
     if risk_state is None and confidence is None:
         return ContextGate(True, 1.0, "no_context")
 

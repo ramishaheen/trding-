@@ -43,11 +43,67 @@ and flatten positions if hard limits are breached.
 │   ├── live_watchdog.py        # independent live-account halt + flatten (API reads)
 │   ├── selectors.py            # centralized BingX UI selectors (verify before use)
 │   └── store.py                # Postgres order queue + kill switch + snapshot
-├── dashboard/                  # FreqUI for Phases 0–2; optional panel for 3+
+├── risk_governor/              # THE trade-approval authority (fail-closed)
+│   ├── governor.py             # approve_trade(), kill switch, cooldowns, modes
+│   ├── checks.py               # pure, unit-tested risk checks
+│   ├── config.py / models.py / alerts.py / audit.py
+├── weekly_target_manager/      # aspirational weekly target (never forced)
+│   ├── manager.py / calculations.py / models.py / config.py
+├── trade_pipeline.py           # Weekly Target Manager → Risk Governor (final)
+├── risk_config.json            # all risk values (RG_* env overrides)
+├── weekly_target_config.json   # weekly target values (WT_* env overrides)
+├── dashboard/                  # polished risk dashboard (server.py + static UI)
+├── docs/RISK_GOVERNOR.md · docs/WEEKLY_TARGET.md · docs/BROWSER_EXECUTION.md
 ├── docs/PHASE4_GO_LIVE_CHECKLIST.md
-├── docs/BROWSER_EXECUTION.md   # live browser path operator guide
-└── tests/                      # strategy, watchdog, sidecar, execution tests
+└── tests/                      # 138 tests: strategy, watchdog, sidecar,
+                                #   execution, risk governor, weekly target
 ```
+
+## Capital-protection architecture (risk-first)
+
+> *A mediocre strategy with excellent risk management beats an "AI genius" with
+> poor discipline.* The system is built around that principle. The order of
+> priority is: **avoid liquidation → protect capital → respect stops → respect
+> daily/weekly loss limits → avoid overtrading → lock profit → pursue the weekly
+> target only when risk allows.**
+
+```
+Strategy Engine → Weekly Target Manager → Risk Governor (FINAL) → Execution → BingX
+```
+
+- **No order reaches BingX without `RiskGovernor.approve_trade()`** approving it.
+  The governor fails **closed**: missing/stale data, unconfirmed stop-loss, API
+  failure, or unknown state → reject and (where needed) halt. See
+  [`docs/RISK_GOVERNOR.md`](docs/RISK_GOVERNOR.md).
+- **Risk-based position sizing** (size from stop distance, never fixed), max
+  leverage 2 / isolated-only, anti-martingale & no averaging-down, spread /
+  slippage / volatility filters, risk:reward ≥ 1.5, trade-quality score ≥ 75,
+  duplicate-order protection, account reconciliation, cooldowns, and an
+  emergency **kill switch** that latches and requires manual restart.
+- **Weekly Target Manager** tracks an *aspirational* 4x weekly target, locks
+  profit as gains accrue, runs adaptive safe modes, caps trade frequency, and
+  **never forces the target or overrides the governor**. See
+  [`docs/WEEKLY_TARGET.md`](docs/WEEKLY_TARGET.md).
+
+### Dashboard
+
+A polished dark/glassmorphism dashboard (`dashboard/`) shows the risk-governor
+status, weekly-target progress, loss-limit gauges, the LLM regime/sentiment,
+positions, equity, and a prominent **STOP** button (trips the shared kill
+switch + Freqtrade `/stop`). It renders with demo data out of the box:
+
+```bash
+docker compose up -d dashboard    # http://localhost:8050
+```
+
+### Integration status (honest)
+
+The Risk Governor, Weekly Target Manager, pipeline, and their **138 unit tests**
+are complete. The live executor routes every order through the pipeline. For the
+governor to *approve* a live order, the strategy must emit a full signal
+(stop-loss, take-profit, ATR, leverage, margin mode, max holding time, quality
+components) via the webhook `meta`; until it does, the governor **rejects**
+incomplete signals — which is the intended fail-closed behaviour.
 
 ## Two execution modes
 
