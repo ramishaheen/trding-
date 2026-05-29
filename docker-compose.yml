@@ -64,6 +64,23 @@ services:
       - .env
     command: ["python", "-u", "research/sidecar.py"]
 
+  # Self-improvement loop: builds the trade journal, computes analytics, and the
+  # Claude analyst agent reviews it + proposes TESTABLE changes (recommend-only;
+  # never trades or changes settings). Stored in strategy_insights.
+  analyst:
+    build:
+      context: .
+      dockerfile: research/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - .env
+    volumes:
+      - ./user_data:/app/user_data:ro   # read closed trades from the dry-run DB
+    command: ["python", "-u", "research/analyst.py"]
+
   watchdog:
     build:
       context: .

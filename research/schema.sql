@@ -79,6 +79,44 @@ INSERT INTO system_flags (key, value, reason)
 VALUES ('kill_switch', 'off', 'init')
 ON CONFLICT (key) DO NOTHING;
 
+-- =============================================================================
+-- Learning loop: trade journal (experience) + analyst insights (knowledge)
+-- =============================================================================
+
+-- One enriched row per closed trade: the outcome joined with the conditions
+-- that held at entry (regime, AI confidence/sentiment, per-coin bias).
+CREATE TABLE IF NOT EXISTS trade_outcomes (
+    id          BIGSERIAL PRIMARY KEY,
+    trade_id    BIGINT UNIQUE,
+    pair        TEXT,
+    open_ts     TIMESTAMPTZ,
+    close_ts    TIMESTAMPTZ,
+    profit_ratio DOUBLE PRECISION,
+    profit_abs  DOUBLE PRECISION,
+    exit_reason TEXT,
+    regime      TEXT,
+    risk_state  TEXT,
+    confidence  DOUBLE PRECISION,
+    sentiment   DOUBLE PRECISION,
+    pair_bias   TEXT,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- The accumulating knowledge base: each analyst-agent review. Recommend-only —
+-- nothing here changes live settings; proposals are validated by walk-forward
+-- and applied by the operator.
+CREATE TABLE IF NOT EXISTS strategy_insights (
+    id              BIGSERIAL PRIMARY KEY,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    trades_analyzed INTEGER NOT NULL DEFAULT 0,
+    summary         TEXT NOT NULL DEFAULT '',
+    whats_working   JSONB NOT NULL DEFAULT '[]'::jsonb,
+    whats_not       JSONB NOT NULL DEFAULT '[]'::jsonb,
+    hypotheses      JSONB NOT NULL DEFAULT '[]'::jsonb,
+    metrics         JSONB NOT NULL DEFAULT '{}'::jsonb,
+    source_model    TEXT NOT NULL DEFAULT ''
+);
+
 -- Operator ON/OFF switch for placing REAL orders. Default OFF (disarmed).
 INSERT INTO system_flags (key, value, reason)
 VALUES ('live_enabled', 'off', 'init')

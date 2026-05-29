@@ -12,6 +12,7 @@
     "dry_run": true,
     "dry_run_wallet": 1000,
     "cancel_open_orders_on_exit": true,
+    "force_entry_enable": true,
 
     "trading_mode": "spot",
     "margin_mode": "",

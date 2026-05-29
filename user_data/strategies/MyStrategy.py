@@ -191,27 +191,22 @@ class MyStrategy(IStrategy):
     # -----------------------------------------------------------------------
     def populate_entry_trend(self, dataframe: pd.DataFrame, metadata: dict) -> pd.DataFrame:
         p = self._params()
-        # Basic uptrend: price and mid-trend EMA above the long trend EMA.
+        # Uptrend: price and mid-trend EMA above the long trend EMA.
         uptrend = (dataframe["close"] > dataframe["ema_trend"]) & (
             dataframe["ema_slow"] > dataframe["ema_trend"]
         )
-        # REGIME FILTER 1 — stacked EMAs (fast > slow > trend). A real trend has
-        # cleanly ordered EMAs; in chop they tangle, which is where the strategy
-        # bled. Requiring the stack sits the bot out of sideways markets.
-        stacked = (dataframe["ema_fast"] > dataframe["ema_slow"]) & (
-            dataframe["ema_slow"] > dataframe["ema_trend"]
-        )
-        # REGIME FILTER 2 — calm volatility. Skip entries when ATR/price is high
-        # (chaotic / spike conditions). Tunable via buy_max_atr_pct.
+        # Volatility filter — skip entries only when ATR/price is high (chaotic /
+        # spike conditions). Tunable via buy_max_atr_pct. (The stricter stacked-
+        # EMA gate was removed: it made entries far too rare. Re-add via hyperopt
+        # if walk-forward shows it helps.)
         calm = (dataframe["atr"] / dataframe["close"]) <= float(self.buy_max_atr_pct.value)
-
         pullback = dataframe["dist_fast"].between(-p.pullback_pct, p.pullback_pct)
         rsi_ok = dataframe["rsi"].between(p.rsi_entry_min, p.rsi_entry_max)
 
         dataframe.loc[
-            uptrend & stacked & calm & pullback & rsi_ok & (dataframe["volume"] > 0),
+            uptrend & calm & pullback & rsi_ok & (dataframe["volume"] > 0),
             ["enter_long", "enter_tag"],
-        ] = (1, "trend_pullback_calm")
+        ] = (1, "trend_pullback")
         return dataframe
 
     def populate_exit_trend(self, dataframe: pd.DataFrame, metadata: dict) -> pd.DataFrame:
