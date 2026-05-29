@@ -1,0 +1,9 @@
+# Only the static dashboard UI is published to Vercel (sample-data viewer).
+# Everything else — code, configs, and especially any secrets — is excluded.
+*
+!dashboard/
+!dashboard/static/
+!dashboard/static/**
+!vercel.json
+.env
+*.env
