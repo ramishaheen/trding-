@@ -361,6 +361,34 @@ async def test_trade(request: Request) -> JSONResponse:
         return JSONResponse({"ok": False, "error": str(exc)}, status_code=502)
 
 
+@app.post("/api/close_trade")
+async def close_trade(request: Request) -> JSONResponse:
+    """Close PAPER trades via Freqtrade's forceexit (dry-run only). Refused while
+    real trading is armed — use the STOP button for the live path. Body may pass
+    {"tradeid": <id|"all">}; defaults to closing all open paper trades."""
+    live = _db_flag("live_enabled")
+    if live and str(live).lower() in {"on", "true", "1", "armed"}:
+        return JSONResponse(
+            {"ok": False, "error": "Disabled while real trading is ON — use STOP for live."},
+            status_code=403)
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        body = {}
+    tradeid = (body or {}).get("tradeid") or "all"
+    try:
+        r = requests.post(f"{FREQTRADE_API_URL}/api/v1/forceexit",
+                          auth=FREQTRADE_AUTH, json={"tradeid": tradeid}, timeout=8)
+        try:
+            payload = r.json()
+        except Exception:  # noqa: BLE001
+            payload = r.text
+        return JSONResponse({"ok": r.status_code == 200, "status": r.status_code,
+                             "result": payload}, status_code=(200 if r.status_code == 200 else 502))
+    except Exception as exc:  # noqa: BLE001
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=502)
+
+
 @app.post("/api/stop")
 def stop() -> dict:
     """Trip the shared kill switch and ask Freqtrade to stop. Best-effort fan-out."""
