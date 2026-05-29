@@ -13,6 +13,8 @@ CREATE TABLE IF NOT EXISTS market_context (
     confidence     DOUBLE PRECISION NOT NULL CHECK (confidence >= 0 AND confidence <= 1),
     sentiment      DOUBLE PRECISION NOT NULL DEFAULT 0 CHECK (sentiment >= -1 AND sentiment <= 1),
     pause_trading  BOOLEAN NOT NULL DEFAULT FALSE,
+    key_risks      JSONB NOT NULL DEFAULT '[]'::jsonb,
+    per_pair_bias  JSONB NOT NULL DEFAULT '[]'::jsonb,
     rationale      TEXT NOT NULL DEFAULT '',
     notable_events JSONB NOT NULL DEFAULT '[]'::jsonb,
     source_model   TEXT NOT NULL DEFAULT '',

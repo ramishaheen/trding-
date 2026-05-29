@@ -91,5 +91,21 @@ def test_injection_in_fields_does_not_escape_schema():
     # Only schema keys are present; nothing actionable leaks through.
     assert set(ctx.keys()) == {
         "regime", "risk_state", "confidence", "sentiment", "pause_trading",
-        "rationale", "notable_events", "source_model",
+        "rationale", "notable_events", "key_risks", "per_pair_bias", "source_model",
     }
+
+
+def test_per_pair_bias_is_sanitized():
+    payload = _valid_payload(per_pair_bias=[
+        {"pair": "BTC/USDT", "bias": "bullish", "note": "above 200EMA"},
+        {"pair": "ETH/USDT", "bias": "YOLO", "note": "x"},      # invalid bias -> neutral
+        "not-an-object",                                          # dropped
+    ])
+    ctx = validate_context(payload, "m")
+    assert ctx["per_pair_bias"][0] == {"pair": "BTC/USDT", "bias": "bullish", "note": "above 200EMA"}
+    assert ctx["per_pair_bias"][1]["bias"] == "neutral"
+    assert len(ctx["per_pair_bias"]) == 2
+
+
+def test_key_risks_defaults_empty():
+    assert validate_context(_valid_payload(), "m")["key_risks"] == []

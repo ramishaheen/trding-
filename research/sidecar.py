@@ -103,20 +103,51 @@ def compute_market_summary() -> dict[str, Any]:
     return summary
 
 
+def _allowlist_pairs() -> list[str]:
+    raw = os.environ.get("LIVE_PAIR_ALLOWLIST", "BTC/USDT,ETH/USDT,SOL/USDT")
+    return [p.strip().upper() for p in raw.split(",") if p.strip()]
+
+
 def classify(market_summary: dict, headlines: list[str], model: str) -> dict[str, Any]:
-    """Call Anthropic and return a validated context dict."""
+    """Call Anthropic (claude-opus-4-8) and return a validated context dict.
+
+    Uses: structured outputs (guaranteed-valid JSON), prompt caching on the
+    frozen system prompt (news/stats are volatile and live in the user message,
+    so the cached prefix stays intact), and adaptive thinking for better
+    reasoning. No sampling params (removed on Opus 4.8). The model only writes a
+    context signal — it never places a trade.
+    """
     from anthropic import Anthropic
-    from prompts import SYSTEM_PROMPT, build_user_message
+    from prompts import CONTEXT_SCHEMA, SYSTEM_PROMPT, build_user_message
 
     client = Anthropic()  # reads ANTHROPIC_API_KEY from env
-    user_msg = build_user_message(market_summary, headlines)
+    user_msg = build_user_message(market_summary, headlines, _allowlist_pairs())
 
     resp = client.messages.create(
         model=model,
-        max_tokens=600,
-        system=SYSTEM_PROMPT,
+        max_tokens=4096,
+        # Frozen system prompt as the cache prefix (cache_control breakpoint).
+        system=[{"type": "text", "text": SYSTEM_PROMPT,
+                 "cache_control": {"type": "ephemeral"}}],
+        # Let Claude reason adaptively; structured output keeps the result valid.
+        thinking={"type": "adaptive"},
+        output_config={
+            "effort": os.environ.get("LLM_EFFORT", "medium"),  # low|medium|high|max
+            "format": {"type": "json_schema", "schema": CONTEXT_SCHEMA},
+        },
         messages=[{"role": "user", "content": user_msg}],
     )
+
+    usage = getattr(resp, "usage", None)
+    if usage is not None:
+        logger.info(
+            "claude usage: input=%s cache_read=%s cache_write=%s output=%s",
+            getattr(usage, "input_tokens", "?"),
+            getattr(usage, "cache_read_input_tokens", 0),
+            getattr(usage, "cache_creation_input_tokens", 0),
+            getattr(usage, "output_tokens", "?"),
+        )
+
     text = "".join(
         block.text for block in resp.content if getattr(block, "type", "") == "text"
     ).strip()
@@ -153,6 +184,27 @@ def validate_context(text: str, model: str) -> dict[str, Any]:
         notable = []
     notable = [str(x)[:280] for x in notable][:10]
 
+    key_risks = data.get("key_risks", [])
+    if not isinstance(key_risks, list):
+        key_risks = []
+    key_risks = [str(x)[:280] for x in key_risks][:10]
+
+    per_pair = data.get("per_pair_bias", [])
+    if not isinstance(per_pair, list):
+        per_pair = []
+    cleaned_bias = []
+    for item in per_pair[:20]:
+        if not isinstance(item, dict):
+            continue
+        bias = str(item.get("bias", "neutral")).lower()
+        if bias not in {"bullish", "bearish", "neutral"}:
+            bias = "neutral"
+        cleaned_bias.append({
+            "pair": str(item.get("pair", ""))[:20],
+            "bias": bias,
+            "note": str(item.get("note", ""))[:200],
+        })
+
     return {
         "regime": regime,
         "risk_state": risk_state,
@@ -161,6 +213,8 @@ def validate_context(text: str, model: str) -> dict[str, Any]:
         "pause_trading": pause_trading,
         "rationale": rationale,
         "notable_events": notable,
+        "key_risks": key_risks,
+        "per_pair_bias": cleaned_bias,
         "source_model": model,
     }
 
@@ -179,8 +233,9 @@ def store_context(ctx: dict[str, Any], headlines: list[str]) -> None:
                 """
                 INSERT INTO market_context
                     (regime, risk_state, confidence, sentiment, pause_trading,
-                     rationale, notable_events, source_model, headlines_hash)
-                VALUES (%s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s)
+                     rationale, notable_events, key_risks, per_pair_bias,
+                     source_model, headlines_hash)
+                VALUES (%s, %s, %s, %s, %s, %s, %s::jsonb, %s::jsonb, %s::jsonb, %s, %s)
                 """,
                 (
                     ctx["regime"],
@@ -190,6 +245,8 @@ def store_context(ctx: dict[str, Any], headlines: list[str]) -> None:
                     ctx["pause_trading"],
                     ctx["rationale"],
                     json.dumps(ctx["notable_events"]),
+                    json.dumps(ctx["key_risks"]),
+                    json.dumps(ctx["per_pair_bias"]),
                     ctx["source_model"],
                     h,
                 ),
