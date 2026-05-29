@@ -72,5 +72,58 @@ services:
       - .env
     command: ["python", "-u", "risk/watchdog.py"]
 
+  # ---------------------------------------------------------------------------
+  # LIVE browser-execution path (REAL MONEY). Gated behind the "live-browser"
+  # compose profile AND the LIVE_BROWSER_TRADING_ENABLED env flag, so it never
+  # starts by accident. Start with:  docker compose --profile live-browser up -d
+  # See docs/BROWSER_EXECUTION.md.
+  # ---------------------------------------------------------------------------
+  execution-bridge:
+    build:
+      context: .
+      dockerfile: execution/Dockerfile
+    profiles: ["live-browser"]
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - .env
+    # Internal network only — no host port published.
+    expose:
+      - "8090"
+    command: ["python", "-m", "uvicorn", "bridge:app", "--host", "0.0.0.0", "--port", "8090"]
+
+  browser-agent:
+    build:
+      context: .
+      dockerfile: execution/Dockerfile
+    profiles: ["live-browser"]
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - .env
+    volumes:
+      - browser_data:/data
+    command: ["python", "-u", "execution/browser_agent.py"]
+
+  live-watchdog:
+    build:
+      context: .
+      dockerfile: execution/Dockerfile
+    profiles: ["live-browser"]
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - .env
+    volumes:
+      - browser_data:/data
+    command: ["python", "-u", "execution/live_watchdog.py"]
+
 volumes:
   pgdata:
+  browser_data:

@@ -31,3 +31,44 @@ BEGIN
 EXCEPTION WHEN OTHERS THEN
     RAISE NOTICE 'Skipping hypertable conversion: %', SQLERRM;
 END $$;
+
+-- =============================================================================
+-- LIVE browser-execution path (only used when LIVE_BROWSER_TRADING_ENABLED=on)
+-- =============================================================================
+
+-- Order queue: the bridge inserts gate-approved orders; the browser subagent
+-- claims and executes them on the live BingX web UI.
+CREATE TABLE IF NOT EXISTS execution_orders (
+    id          BIGSERIAL PRIMARY KEY,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    claimed_at  TIMESTAMPTZ,
+    finished_at TIMESTAMPTZ,
+    status      TEXT NOT NULL DEFAULT 'pending'
+                CHECK (status IN ('pending','claimed','done','failed','denied')),
+    action      TEXT NOT NULL CHECK (action IN ('enter','exit')),
+    pair        TEXT NOT NULL,
+    side        TEXT NOT NULL DEFAULT 'long',
+    order_type  TEXT NOT NULL DEFAULT 'market' CHECK (order_type IN ('market','limit')),
+    stake       DOUBLE PRECISION NOT NULL DEFAULT 0,
+    amount      DOUBLE PRECISION,
+    price       DOUBLE PRECISION,
+    tag         TEXT NOT NULL DEFAULT '',
+    detail      TEXT NOT NULL DEFAULT ''
+);
+
+CREATE INDEX IF NOT EXISTS idx_execution_orders_pending
+    ON execution_orders (id) WHERE status = 'pending';
+
+-- Key/value flags: kill switch + latest real-account snapshot.
+CREATE TABLE IF NOT EXISTS system_flags (
+    key        TEXT PRIMARY KEY,
+    value      TEXT NOT NULL,
+    reason     TEXT NOT NULL DEFAULT '',
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Default kill switch to OFF (running). Fail-closed reads still treat a missing
+-- row / unreachable DB as tripped.
+INSERT INTO system_flags (key, value, reason)
+VALUES ('kill_switch', 'off', 'init')
+ON CONFLICT (key) DO NOTHING;

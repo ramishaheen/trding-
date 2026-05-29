@@ -113,6 +113,33 @@
         }
     },
 
+    "_webhook_comment": "Forwards dry-run entry/exit FILL decisions to the execution bridge, which (only if LIVE_BROWSER_TRADING_ENABLED=on) mirrors them to the live BingX web UI via the browser subagent. Disabled by default. The bridge is reachable only on the internal docker network. Freqtrade itself stays dry_run:true.",
+    "webhook": {
+        "enabled": false,
+        "url": "http://execution-bridge:8090/webhook/decision",
+        "format": "json",
+        "retries": 2,
+        "retry_delay": 0.2,
+        "entry_fill": {
+            "action": "enter",
+            "pair": "{pair}",
+            "side": "long",
+            "order_type": "market",
+            "stake": "{stake_amount}",
+            "amount": "{amount}",
+            "price": "{open_rate}",
+            "tag": "{enter_tag}"
+        },
+        "exit_fill": {
+            "action": "exit",
+            "pair": "{pair}",
+            "side": "long",
+            "order_type": "market",
+            "amount": "{amount}",
+            "tag": "{exit_reason}"
+        }
+    },
+
     "api_server": {
         "enabled": true,
         "listen_ip_address": "0.0.0.0",

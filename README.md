@@ -34,10 +34,33 @@ and flatten positions if hard limits are breached.
 ├── risk/
 │   ├── watchdog.py             # independent daily-loss / drawdown kill switch
 │   └── risk_logic.py           # pure, unit-tested limit rules
+├── execution/                  # OPTIONAL live browser-execution path (REAL MONEY)
+│   ├── execution_logic.py      # pure, unit-tested gate + decision validation
+│   ├── bridge.py               # FastAPI: Freqtrade webhook -> gate -> order queue
+│   ├── browser_agent.py        # Playwright/Chromium subagent placing live orders
+│   ├── live_watchdog.py        # independent live-account halt + flatten
+│   ├── selectors.py            # centralized BingX UI selectors (verify before use)
+│   └── store.py                # Postgres order queue + kill switch + snapshot
 ├── dashboard/                  # FreqUI for Phases 0–2; optional panel for 3+
 ├── docs/PHASE4_GO_LIVE_CHECKLIST.md
-└── tests/                      # strategy, watchdog, and sidecar unit tests
+├── docs/BROWSER_EXECUTION.md   # live browser path operator guide
+└── tests/                      # strategy, watchdog, sidecar, execution tests
 ```
+
+## Two execution modes
+
+| Mode | What it does | Money | Default |
+|------|--------------|-------|---------|
+| **Freqtrade dry-run** | Paper trades on live BingX data; full Freqtrade safety stack | Paper | ✅ on |
+| **Live browser execution** | A Playwright subagent mirrors decisions onto the live BingX web UI | **REAL** | ⛔ off (opt-in) |
+
+The live browser path is **off by default** and gated behind both the
+`LIVE_BROWSER_TRADING_ENABLED` flag and the `live-browser` compose profile.
+Because browser-placed orders are invisible to the Freqtrade watchdog, it ships
+with its **own** independent gate (pair allowlist, max positions, daily-loss
+cap, per-trade stake clamp, fail-closed kill switch) and a **live account
+watchdog** that trips the kill switch and flattens on a breach. **Read
+`docs/BROWSER_EXECUTION.md` before enabling it — real money is at risk.**
 
 ## Design guarantees
 
