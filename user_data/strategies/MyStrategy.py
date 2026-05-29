@@ -153,6 +153,9 @@ class MyStrategy(IStrategy):
     atr_stop_mult = DecimalParameter(1.0, 4.0, default=2.0, decimals=1, space="sell", optimize=True)
     take_profit_rr = DecimalParameter(1.5, 3.0, default=2.0, decimals=1, space="sell", optimize=False)
     max_holding_minutes = IntParameter(60, 4320, default=1440, space="sell", optimize=False)
+    # Regime filter: skip entries when volatility (ATR/price) is too high
+    # (chaotic / chop). Hyperopt-tunable so walk-forward can optimise it.
+    buy_max_atr_pct = DecimalParameter(0.01, 0.08, default=0.04, decimals=3, space="buy", optimize=True)
 
     def _params(self) -> StrategyParams:
         return StrategyParams(
@@ -188,16 +191,27 @@ class MyStrategy(IStrategy):
     # -----------------------------------------------------------------------
     def populate_entry_trend(self, dataframe: pd.DataFrame, metadata: dict) -> pd.DataFrame:
         p = self._params()
+        # Basic uptrend: price and mid-trend EMA above the long trend EMA.
         uptrend = (dataframe["close"] > dataframe["ema_trend"]) & (
             dataframe["ema_slow"] > dataframe["ema_trend"]
         )
+        # REGIME FILTER 1 — stacked EMAs (fast > slow > trend). A real trend has
+        # cleanly ordered EMAs; in chop they tangle, which is where the strategy
+        # bled. Requiring the stack sits the bot out of sideways markets.
+        stacked = (dataframe["ema_fast"] > dataframe["ema_slow"]) & (
+            dataframe["ema_slow"] > dataframe["ema_trend"]
+        )
+        # REGIME FILTER 2 — calm volatility. Skip entries when ATR/price is high
+        # (chaotic / spike conditions). Tunable via buy_max_atr_pct.
+        calm = (dataframe["atr"] / dataframe["close"]) <= float(self.buy_max_atr_pct.value)
+
         pullback = dataframe["dist_fast"].between(-p.pullback_pct, p.pullback_pct)
         rsi_ok = dataframe["rsi"].between(p.rsi_entry_min, p.rsi_entry_max)
 
         dataframe.loc[
-            uptrend & pullback & rsi_ok & (dataframe["volume"] > 0),
+            uptrend & stacked & calm & pullback & rsi_ok & (dataframe["volume"] > 0),
             ["enter_long", "enter_tag"],
-        ] = (1, "trend_pullback")
+        ] = (1, "trend_pullback_calm")
         return dataframe
 
     def populate_exit_trend(self, dataframe: pd.DataFrame, metadata: dict) -> pd.DataFrame:

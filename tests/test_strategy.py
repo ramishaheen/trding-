@@ -157,3 +157,24 @@ def test_gate_cannot_force_a_trade():
         g = apply_context_gate(state, 0.99, P)
         assert g.stake_multiplier <= 1.0
         assert isinstance(g, ContextGate)
+
+
+# --- Regime / volatility filter (sit out chop & high-vol) ------------------
+def test_volatility_filter_blocks_high_vol():
+    from strategy_logic import volatility_filter_ok
+    # ATR 2 on price 100 = 2% — calm if max is 5%
+    assert volatility_filter_ok(2.0, 100.0, 0.05) is True
+    # ATR 8 on price 100 = 8% — too hot if max is 5%
+    assert volatility_filter_ok(8.0, 100.0, 0.05) is False
+
+
+def test_regime_classifier_distinguishes_trend_chop_and_vol():
+    from strategy_logic import regime_from_prices
+    # high vol dominates regardless of trend
+    assert regime_from_prices(100, 99, 95, atr_value=9.0, high_vol_atr_pct=0.05) == "high_vol"
+    # clean stacked uptrend, calm
+    assert regime_from_prices(110, 105, 100, atr_value=1.0) == "trending_up"
+    # downtrend
+    assert regime_from_prices(90, 95, 100, atr_value=1.0) == "trending_down"
+    # tangled -> ranging
+    assert regime_from_prices(100, 101, 100, atr_value=1.0) == "ranging"
