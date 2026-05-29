@@ -278,9 +278,9 @@ function render(s){
   document.getElementById('rationale').textContent=mc.rationale||'';
 
   // Per-coin view (AI bias per coin) — bearish coins are the ones the bot will be pickier on
-  const pb=document.getElementById('pairBias');
+  const pbias=document.getElementById('pairBias');
   const biasColor={bullish:'var(--good)',bearish:'var(--bad)',neutral:'var(--muted)'};
-  pb.innerHTML=(mc.per_pair_bias&&mc.per_pair_bias.length)? mc.per_pair_bias.map(b=>
+  pbias.innerHTML=(mc.per_pair_bias&&mc.per_pair_bias.length)? mc.per_pair_bias.map(b=>
     `<span class="pill" title="${(b.note||'').replace(/"/g,'')}" style="color:${biasColor[b.bias]||'var(--muted)'}">
        ${(b.pair||'').replace('/USDT','')}: ${b.bias||'—'}</span>`).join('') : '';
   // Watch out for (key risks)
@@ -358,8 +358,20 @@ async function emergencyStop(){
   tick();
 }
 
-async function tick(){ render(await fetchState()); }
-render(DEMO);            // show the full screen instantly, even with no server/network
+async function tick(){
+  try{ render(await fetchState()); }
+  catch(e){ console.error('dashboard render failed:', e);
+    var el=document.getElementById('sumText');
+    if(el) el.textContent='Display error — press Ctrl+Shift+R to hard-refresh';
+  }
+}
+// Surface any uncaught script error instead of sitting on "Loading…".
+window.addEventListener('error',function(e){
+  var el=document.getElementById('sumText');
+  if(el && el.textContent==='Loading…') el.textContent='Display error — hard-refresh (Ctrl+Shift+R)';
+  console.error('script error:', e.message);
+});
+try{ render(DEMO); }catch(e){ console.error(e); }   // show the screen instantly
 tick(); setInterval(tick,5000);
 </script>
 </body>

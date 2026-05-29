@@ -86,6 +86,10 @@ services:
         condition: service_healthy
     env_file:
       - .env
+    # Bind-mount the static UI so dashboard look/layout changes apply on a plain
+    # `docker compose restart dashboard` (no image rebuild needed).
+    volumes:
+      - ./dashboard/static:/app/dashboard/static:ro
     # On a public VPS with a domain, prefer the caddy proxy below (HTTPS) and
     # firewall this port. Bound to localhost so it isn't exposed raw; reach it
     # locally or via SSH tunnel. Change to "8050:8050" for plain local use.
