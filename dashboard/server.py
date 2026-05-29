@@ -332,6 +332,35 @@ def disarm() -> dict:
         return {"ok": False, "error": str(exc)}
 
 
+@app.post("/api/test_trade")
+async def test_trade(request: Request) -> JSONResponse:
+    """Open a PAPER test trade via Freqtrade's forceenter (dry-run only).
+    Refused while real trading is armed — defense in depth alongside the UI
+    hiding the button. Freqtrade itself always runs dry_run, so this never
+    spends real money; the executor's live path is separate."""
+    live = _db_flag("live_enabled")
+    if live and str(live).lower() in {"on", "true", "1", "armed"}:
+        return JSONResponse(
+            {"ok": False, "error": "Disabled while real trading is ON (test trades are paper-only)."},
+            status_code=403)
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        body = {}
+    pair = (body or {}).get("pair") or "BTC/USDT"
+    try:
+        r = requests.post(f"{FREQTRADE_API_URL}/api/v1/forceenter",
+                          auth=FREQTRADE_AUTH, json={"pair": pair}, timeout=8)
+        try:
+            payload = r.json()
+        except Exception:  # noqa: BLE001
+            payload = r.text
+        return JSONResponse({"ok": r.status_code == 200, "status": r.status_code,
+                             "result": payload}, status_code=(200 if r.status_code == 200 else 502))
+    except Exception as exc:  # noqa: BLE001
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=502)
+
+
 @app.post("/api/stop")
 def stop() -> dict:
     """Trip the shared kill switch and ask Freqtrade to stop. Best-effort fan-out."""

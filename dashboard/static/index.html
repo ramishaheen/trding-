@@ -83,6 +83,7 @@
     <span id="modePill" class="pill">—</span>
     <span id="armPill" class="pill">Real trading: —</span>
     <span id="connPill" class="pill warn"><span class="dot" style="background:var(--warn)"></span>connecting…</span>
+    <button class="stop" id="testBtn" onclick="testTrade()" style="display:none;background:linear-gradient(135deg,#6aa3ff,#3b6fd4);box-shadow:0 8px 24px rgba(59,111,212,.4)">＋ TEST TRADE</button>
     <button class="stop" id="armBtn" onclick="toggleArm()" style="background:linear-gradient(135deg,#2bd49a,#149e6e);box-shadow:0 8px 24px rgba(20,158,110,.4)">▶ TURN ON</button>
     <button class="stop" onclick="emergencyStop()">■ STOP NOW</button>
   </div>
@@ -252,6 +253,8 @@ function render(s){
   ap.className='pill '+(s.armed?'bad':'good');
   if(s.armed){ ab.textContent='⏸ TURN OFF'; ab.style.background='linear-gradient(135deg,#ffb43a,#e08a00)'; ab.style.boxShadow='0 8px 24px rgba(224,138,0,.4)'; }
   else { ab.textContent='▶ TURN ON'; ab.style.background='linear-gradient(135deg,#2bd49a,#149e6e)'; ab.style.boxShadow='0 8px 24px rgba(20,158,110,.4)'; }
+  // "Test trade" is paper-only: show it only when NOT armed and not in sample mode.
+  document.getElementById('testBtn').style.display = (!s.demo && !s.armed) ? 'inline-block' : 'none';
 
   document.getElementById('balance').textContent='$'+fmt(rs.account_balance);
   document.getElementById('peak').textContent='$'+fmt(rs.equity_peak);
@@ -349,6 +352,17 @@ async function toggleArm(){
       if(!r.ok) alert('Could not turn on: '+(r.error||JSON.stringify(r.result))); }
     catch(e){ alert('Could not reach the bot: '+e); }
   }
+  tick();
+}
+
+async function testTrade(){
+  if(!confirm('Open a PAPER test trade on BTC/USDT now?\n\nDry-run only — no real money. Lets you see a trade flow through the system.')) return;
+  try{
+    const r = await (await fetch('/api/test_trade',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({pair:'BTC/USDT'})})).json();
+    if(r.ok) alert('Test trade opened — check "Open trades now".');
+    else alert('Could not open it: '+(r.error || (typeof r.result==='string'? r.result : JSON.stringify(r.result)) || ('HTTP '+r.status)));
+  }catch(e){ alert('Request failed: '+e); }
   tick();
 }
 
