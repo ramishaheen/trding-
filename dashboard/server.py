@@ -30,6 +30,7 @@ FREQTRADE_API_URL = os.environ.get("FREQTRADE_API_URL", "http://freqtrade:8080")
 FREQTRADE_AUTH = (os.environ.get("FREQTRADE_USERNAME", "freqtrader"),
                   os.environ.get("FREQTRADE_PASSWORD", ""))
 BRIDGE_URL = os.environ.get("EXECUTION_BRIDGE_URL", "http://execution-bridge:8090").rstrip("/")
+WEBHOOK_TOKEN = os.environ.get("EXECUTION_WEBHOOK_TOKEN", "")
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
 
@@ -76,6 +77,7 @@ def _demo_state() -> dict:
     return {
         "demo": True,
         "kill_switch_active": False,
+        "armed": False,
         "risk_status": {
             "trading_enabled": True, "risk_mode": "normal", "trading_mode": "REAL_TRADING_STRICT",
             "account_balance": 100.0, "available_margin": 100.0, "daily_pnl": 1.2, "weekly_pnl": 6.5,
@@ -129,9 +131,11 @@ def state() -> JSONResponse:
             positions.append({"pair": t.get("pair"), "amount": t.get("amount"),
                               "open_rate": t.get("open_rate"),
                               "profit_pct": (t.get("profit_ratio") or 0) * 100})
+    live = _db_flag("live_enabled")
     return JSONResponse({
         "demo": False,
         "kill_switch_active": (str(kill).lower() in {"on", "true", "1"}) if kill else False,
+        "armed": (str(live).lower() in {"on", "true", "1", "armed"}) if live else False,
         "risk_status": risk_status or {},
         "weekly_target": weekly or {},
         "market_context": mc or {},
@@ -140,6 +144,27 @@ def state() -> JSONResponse:
         "equity_curve": [],
         "ts": time.time(),
     })
+
+
+@app.post("/api/arm")
+def arm() -> dict:
+    """Turn real trading ON (operator action). The bot still requires the
+    deploy-time master flag + REAL mode, and every trade still passes the Risk
+    Governor. Returns the bridge's response."""
+    try:
+        r = requests.post(f"{BRIDGE_URL}/live/on", headers={"X-Webhook-Token": WEBHOOK_TOKEN}, timeout=5)
+        return {"ok": r.ok, "result": r.json() if r.ok else r.text}
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "error": str(exc)}
+
+
+@app.post("/api/disarm")
+def disarm() -> dict:
+    try:
+        r = requests.post(f"{BRIDGE_URL}/live/off", headers={"X-Webhook-Token": WEBHOOK_TOKEN}, timeout=5)
+        return {"ok": r.ok, "result": r.json() if r.ok else r.text}
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "error": str(exc)}
 
 
 @app.post("/api/stop")

@@ -35,7 +35,9 @@ from store import (
     enqueue_order,
     read_account_state,
     read_kill_switch,
+    read_live_enabled,
     set_kill_switch,
+    set_live_enabled,
 )
 
 logging.basicConfig(
@@ -155,3 +157,34 @@ def resume() -> dict:
     set_kill_switch(False, reason="manual /resume")
     logger.warning("kill switch cleared via /resume")
     return {"kill_switch": "cleared"}
+
+
+def _check_token(token: str) -> None:
+    if WEBHOOK_TOKEN and token != WEBHOOK_TOKEN:
+        raise HTTPException(status_code=401, detail="bad token")
+
+
+@app.post("/live/on")
+def live_on(x_webhook_token: str = Header(default="")) -> dict:
+    """ARM real-money trading (operator action). Real orders still require the
+    deploy-time master flag + REAL_TRADING_STRICT mode, and always pass the
+    Risk Governor. The kill switch overrides this."""
+    _check_token(x_webhook_token)
+    set_live_enabled(True, reason="manual /live/on")
+    logger.critical("LIVE TRADING ARMED via /live/on")
+    return {"armed": True}
+
+
+@app.post("/live/off")
+def live_off(x_webhook_token: str = Header(default="")) -> dict:
+    """DISARM real-money trading. Approved signals become 'observed' (not placed)."""
+    _check_token(x_webhook_token)
+    set_live_enabled(False, reason="manual /live/off")
+    logger.warning("LIVE TRADING DISARMED via /live/off")
+    return {"armed": False}
+
+
+@app.get("/live/status")
+def live_status() -> dict:
+    return {"armed": read_live_enabled(),
+            "kill_switch": interpret_kill_switch(read_kill_switch())}

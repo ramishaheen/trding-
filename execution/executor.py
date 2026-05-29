@@ -24,6 +24,7 @@ from store import (
     claim_next_pending,
     finish_order,
     read_kill_switch,
+    read_live_enabled,
     set_kill_switch,
     write_status,
 )
@@ -68,29 +69,35 @@ def _place(order: dict, decision, quantity: float, browser) -> tuple[bool, str]:
     return False, detail or "no_order_path"
 
 
-def _persist_status(governor: RiskGovernor, wtm: WeeklyTargetManager, now_ts: float) -> None:
+def _persist_status(governor: RiskGovernor, wtm: WeeklyTargetManager, now_ts: float,
+                    can_arm: bool, armed: bool) -> None:
     try:
         write_status("risk_status", governor.risk_status().to_dict())
         write_status("weekly_target", wtm.dashboard(now_ts))
+        write_status("live_state", {"can_arm": can_arm, "armed": armed,
+                                    "mode": "REAL_TRADING_STRICT" if armed else "DISARMED (no real orders)"})
     except Exception as exc:  # noqa: BLE001
         logger.warning("status persist failed: %s", exc)
 
 
-def run_loop(governor: RiskGovernor, wtm: WeeklyTargetManager, client, browser) -> None:
+def run_loop(governor: RiskGovernor, wtm: WeeklyTargetManager, client, browser, can_arm: bool) -> None:
     while True:
         now = time.time()
+        # Day-to-day ON/OFF switch (in addition to the deploy-time master + mode).
+        armed = can_arm and read_live_enabled()
 
         # Global kill switch (shared flag) halts everything immediately.
         from execution_logic import interpret_kill_switch
         if interpret_kill_switch(read_kill_switch()) or governor.kill_switch_active:
-            governor.emergency_kill_switch("shared_kill_flag") if not governor.kill_switch_active else None
-            _persist_status(governor, wtm, now)
+            if not governor.kill_switch_active:
+                governor.emergency_kill_switch("shared_kill_flag")
+            _persist_status(governor, wtm, now, can_arm, armed)
             time.sleep(POLL_SECONDS * 3)
             continue
 
         order = claim_next_pending()
         if not order:
-            _persist_status(governor, wtm, now)
+            _persist_status(governor, wtm, now, can_arm, armed)
             time.sleep(POLL_SECONDS)
             continue
 
@@ -100,20 +107,28 @@ def run_loop(governor: RiskGovernor, wtm: WeeklyTargetManager, client, browser) 
             market = build_market_snapshot(client, order["pair"], order.get("meta") or {})
             signal = build_trade_signal(order, now)
 
-            # Exits should not be blocked from reducing risk: the governor allows
-            # exits, but the pipeline still records them; we route exits straight
-            # to placement (flattening must always work).
+            # Exits reduce risk and must always be possible when live-capable.
             if decision.action == "exit":
-                ok, detail = _place(order, decision, order.get("amount") or 0, browser)
-                finish_order(order["id"], "done" if ok else "failed", detail)
-                _persist_status(governor, wtm, now)
+                if can_arm and client is not None:
+                    ok, detail = _place(order, decision, order.get("amount") or 0, browser)
+                    finish_order(order["id"], "done" if ok else "failed", detail)
+                else:
+                    finish_order(order["id"], "observed", "exit not placed (paper/disarmed)")
+                _persist_status(governor, wtm, now, can_arm, armed)
                 continue
 
+            # Entry: must pass Weekly Target Manager + Risk Governor (final).
             result = evaluate_trade(wtm, governor, signal, account, market, now)
-            _persist_status(governor, wtm, now)
+            _persist_status(governor, wtm, now, can_arm, armed)
             if not result.approved:
                 logger.warning("order %s REJECTED: %s", order["id"], result.reason)
                 finish_order(order["id"], "denied", result.reason)
+                continue
+
+            # Approved — but only place a REAL order if the operator has ARMED it.
+            if not armed:
+                logger.info("order %s approved but DISARMED -> observed only (no real order)", order["id"])
+                finish_order(order["id"], "observed", f"approved:{result.reason}; armed=off")
                 continue
 
             ok, detail = _place(order, decision, result.quantity, browser)
@@ -127,11 +142,10 @@ def run_loop(governor: RiskGovernor, wtm: WeeklyTargetManager, client, browser) 
 
 def main() -> int:
     mode = load_config().trading_mode
-    if not live_trading_enabled(os.environ.get("LIVE_BROWSER_TRADING_ENABLED")):
-        logger.error("LIVE_BROWSER_TRADING_ENABLED is off; executor idle (no real orders). Exiting.")
-        return 0
-    if mode != TradingMode.REAL_TRADING_STRICT.value:
-        logger.warning("trading_mode=%s (not REAL_TRADING_STRICT); executor will not place real orders.", mode)
+    master = live_trading_enabled(os.environ.get("LIVE_BROWSER_TRADING_ENABLED"))
+    # Real orders require BOTH the deploy-time master flag AND REAL_TRADING_STRICT.
+    # The day-to-day ARM switch (read each loop) is the third, operator-held gate.
+    can_arm = master and (mode == TradingMode.REAL_TRADING_STRICT.value)
 
     governor = RiskGovernor(config=load_config(),
                             cancel_all_orders=_flatten_via_kill,
@@ -144,19 +158,24 @@ def main() -> int:
         logger.error("BingX client unavailable: %s", exc)
         client = None
 
-    logger.warning("EXECUTOR STARTING — order_path=%s mode=%s allowlist=%s", ORDER_PATH, mode, ALLOWLIST)
+    if can_arm:
+        logger.warning("EXECUTOR STARTING — LIVE-CAPABLE (master on, mode REAL). Real orders only "
+                       "while ARMED. order_path=%s allowlist=%s", ORDER_PATH, ALLOWLIST)
+    else:
+        logger.warning("EXECUTOR STARTING — OBSERVE ONLY (no real orders): master=%s mode=%s. "
+                       "Decisions are evaluated and shown but never placed.", master, mode)
 
-    need_browser = ORDER_PATH in ("browser", "both")
+    need_browser = ORDER_PATH in ("browser", "both") and can_arm
     if need_browser:
         try:
             from browser_agent import BrowserSession
             with BrowserSession() as browser:
-                run_loop(governor, wtm, client, browser)
+                run_loop(governor, wtm, client, browser, can_arm)
         except Exception as exc:  # noqa: BLE001 - browser optional; run API-only
             logger.error("browser session unavailable (%s); running API-only", exc)
-            run_loop(governor, wtm, client, browser=None)
+            run_loop(governor, wtm, client, browser=None, can_arm=can_arm)
     else:
-        run_loop(governor, wtm, client, browser=None)
+        run_loop(governor, wtm, client, browser=None, can_arm=can_arm)
     return 0
 
 

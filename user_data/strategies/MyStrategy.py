@@ -34,40 +34,66 @@ from freqtrade.strategy import (
     informative,
 )
 
+import json
+import urllib.request
+
 from strategy_logic import (
     StrategyParams,
     apply_context_gate,
     atr_stoploss_ratio,
+    build_entry_signal,
+    build_exit_signal,
 )
 
 logger = logging.getLogger(__name__)
 
+# The bridge that runs the Risk Governor pipeline. The strategy PROPOSES trades
+# here; it never sends orders to the exchange itself.
+BRIDGE_URL = os.environ.get("EXECUTION_BRIDGE_URL", "http://execution-bridge:8090").rstrip("/")
+WEBHOOK_TOKEN = os.environ.get("EXECUTION_WEBHOOK_TOKEN", "")
 
-def _read_latest_market_context() -> tuple[Optional[str], Optional[float]]:
-    """Fetch the latest (risk_state, confidence) from the market_context table.
 
-    Fails open: any error (no DB, no driver, empty table) returns (None, None),
-    which the soft gate treats as "no context -> allow". Hard risk controls
-    (watchdog + on-exchange stops) are independent of this.
+def _read_latest_market_context() -> tuple[Optional[str], Optional[float], bool]:
+    """Fetch the latest (risk_state, confidence, pause_trading) from market_context.
+
+    Fails open: any error (no DB, no driver, empty table) returns
+    (None, None, False) -> the soft gate treats it as "no context -> allow".
+    Hard risk controls (governor + watchdog + on-exchange stops) are independent.
     """
     dsn = os.environ.get("DATABASE_URL")
     if not dsn:
-        return None, None
+        return None, None, False
     try:
         import psycopg  # imported lazily; absent in pure backtests
 
         with psycopg.connect(dsn, connect_timeout=3) as conn:
             with conn.cursor() as cur:
                 cur.execute(
-                    "SELECT risk_state, confidence FROM market_context "
+                    "SELECT risk_state, confidence, pause_trading FROM market_context "
                     "ORDER BY created_at DESC LIMIT 1"
                 )
                 row = cur.fetchone()
                 if row:
-                    return row[0], float(row[1])
+                    return row[0], float(row[1]), bool(row[2])
     except Exception as exc:  # noqa: BLE001 - fail open by design
         logger.warning("market_context read failed (gate fails open): %s", exc)
-    return None, None
+    return None, None, False
+
+
+def _emit_signal(payload: dict) -> None:
+    """POST a proposed trade signal to the execution bridge (best-effort).
+
+    The bridge runs it through the Weekly Target Manager + Risk Governor; only an
+    approved, armed signal becomes a real order. Never raises into freqtrade.
+    """
+    try:
+        data = json.dumps(payload).encode()
+        req = urllib.request.Request(f"{BRIDGE_URL}/webhook/decision", data=data,
+                                     headers={"Content-Type": "application/json",
+                                              "X-Webhook-Token": WEBHOOK_TOKEN})
+        urllib.request.urlopen(req, timeout=4).read()
+    except Exception as exc:  # noqa: BLE001 - execution is decoupled; paper engine unaffected
+        logger.warning("signal emit failed (paper engine unaffected): %s", exc)
 
 
 class MyStrategy(IStrategy):
@@ -98,6 +124,8 @@ class MyStrategy(IStrategy):
     sell_rsi = DecimalParameter(65, 85, default=75, decimals=0, space="sell", optimize=True)
     atr_period = IntParameter(7, 28, default=14, space="sell", optimize=True)
     atr_stop_mult = DecimalParameter(1.0, 4.0, default=2.0, decimals=1, space="sell", optimize=True)
+    take_profit_rr = DecimalParameter(1.5, 3.0, default=2.0, decimals=1, space="sell", optimize=False)
+    max_holding_minutes = IntParameter(60, 4320, default=1440, space="sell", optimize=False)
 
     def _params(self) -> StrategyParams:
         return StrategyParams(
@@ -176,17 +204,45 @@ class MyStrategy(IStrategy):
     def confirm_trade_entry(
         self, pair, order_type, amount, rate, time_in_force, current_time, entry_tag, side, **kwargs
     ) -> bool:
-        gate = apply_context_gate(*_read_latest_market_context(), params=self._params())
+        risk_state, confidence, pause = _read_latest_market_context()
+        gate = apply_context_gate(risk_state, confidence, self._params(), pause_trading=pause)
         if not gate.allow_new_entries:
             logger.info("Entry on %s blocked by soft gate: %s", pair, gate.reason)
             return False
+
+        # Propose a COMPLETE trade to the Risk Governor pipeline (live path).
+        # The paper engine still records its own dry-run trade; the governor
+        # independently decides whether a REAL order is placed.
+        p = self._params()
+        df, _ = self.dp.get_analyzed_dataframe(pair, self.timeframe)
+        if df is not None and not df.empty:
+            atr_value = float(df["atr"].iloc[-1])
+            atr_avg = float(df["atr"].tail(20).mean()) if len(df) >= 20 else atr_value
+            if atr_value > 0 and not pd.isna(atr_value):
+                _emit_signal(build_entry_signal(
+                    pair, float(rate), atr_value, atr_avg, p,
+                    current_time.timestamp(),
+                    take_profit_rr=float(self.take_profit_rr.value),
+                    max_holding_minutes=int(self.max_holding_minutes.value),
+                ))
+        return True
+
+    def confirm_trade_exit(
+        self, pair, trade, order_type, amount, rate, time_in_force, exit_reason,
+        current_time, **kwargs
+    ) -> bool:
+        # Mirror the exit to the live path so the governor can flatten the real
+        # position. Exits are always allowed through the risk gate.
+        _emit_signal(build_exit_signal(pair, float(amount), current_time.timestamp(),
+                                       reason=str(exit_reason)))
         return True
 
     def custom_stake_amount(
         self, pair, current_time, current_rate, proposed_stake, min_stake, max_stake,
         leverage, entry_tag, side, **kwargs
     ) -> float:
-        gate = apply_context_gate(*_read_latest_market_context(), params=self._params())
+        risk_state, confidence, pause = _read_latest_market_context()
+        gate = apply_context_gate(risk_state, confidence, self._params(), pause_trading=pause)
         stake = proposed_stake * gate.stake_multiplier
         if min_stake is not None and stake < min_stake:
             # If the reduced stake falls below the venue minimum, skip rather

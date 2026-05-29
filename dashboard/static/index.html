@@ -81,7 +81,9 @@
     <div class="spacer"></div>
     <span id="demoPill" class="pill demo" style="display:none">Sample data</span>
     <span id="modePill" class="pill">—</span>
+    <span id="armPill" class="pill">Real trading: —</span>
     <span id="connPill" class="pill warn"><span class="dot" style="background:var(--warn)"></span>connecting…</span>
+    <button class="stop" id="armBtn" onclick="toggleArm()" style="background:linear-gradient(135deg,#2bd49a,#149e6e);box-shadow:0 8px 24px rgba(20,158,110,.4)">▶ TURN ON</button>
     <button class="stop" onclick="emergencyStop()">■ STOP NOW</button>
   </div>
 
@@ -237,6 +239,14 @@ function render(s){
   summary(s);
   document.getElementById('modePill').textContent = s.demo ? 'Practice / sample' : (rs.trading_mode==='REAL_TRADING_STRICT'?'Real money':(rs.trading_mode||'—'));
 
+  // Real-trading ON/OFF indicator + button
+  window._armed = !!s.armed;
+  const ap=document.getElementById('armPill'), ab=document.getElementById('armBtn');
+  ap.textContent = 'Real trading: '+(s.armed?'ON':'OFF');
+  ap.className='pill '+(s.armed?'bad':'good');
+  if(s.armed){ ab.textContent='⏸ TURN OFF'; ab.style.background='linear-gradient(135deg,#ffb43a,#e08a00)'; ab.style.boxShadow='0 8px 24px rgba(224,138,0,.4)'; }
+  else { ab.textContent='▶ TURN ON'; ab.style.background='linear-gradient(135deg,#2bd49a,#149e6e)'; ab.style.boxShadow='0 8px 24px rgba(20,158,110,.4)'; }
+
   document.getElementById('balance').textContent='$'+fmt(rs.account_balance);
   document.getElementById('peak').textContent='$'+fmt(rs.equity_peak);
   const rmEl=document.getElementById('riskMode'); const rm=rs.risk_mode||'—';
@@ -303,6 +313,20 @@ function drawChart(data){
     backgroundColor:'rgba(43,212,154,.12)',fill:true,tension:.35,pointRadius:0,borderWidth:2}]},
     options:{plugins:{legend:{display:false}},scales:{x:{display:false},
       y:{ticks:{color:'#9aa4c2'},grid:{color:'rgba(255,255,255,.05)'}}}}});
+}
+
+async function toggleArm(){
+  if(window._armed){
+    if(!confirm('Turn real trading OFF?\n\nThe bot will keep watching and showing decisions, but will not place any new real orders.')) return;
+    try{ await fetch('/api/disarm',{method:'POST'}); }catch(e){ alert('Could not reach the bot: '+e); }
+  } else {
+    const ok = prompt('⚠️ Turn REAL-MONEY trading ON?\n\nThe bot will start placing real orders on your account when its safety system approves a trade. You can lose money.\n\nType  ARM  to confirm:');
+    if((ok||'').trim().toUpperCase()!=='ARM'){ alert('Cancelled — nothing changed.'); return; }
+    try{ const r=await(await fetch('/api/arm',{method:'POST'})).json();
+      if(!r.ok) alert('Could not turn on: '+(r.error||JSON.stringify(r.result))); }
+    catch(e){ alert('Could not reach the bot: '+e); }
+  }
+  tick();
 }
 
 async function emergencyStop(){

@@ -128,6 +128,36 @@ def read_kill_switch() -> Optional[str]:
         return None
 
 
+LIVE_ENABLED = "live_enabled"
+
+
+def read_live_enabled() -> bool:
+    """The operator's day-to-day ON/OFF switch for real orders. Fails closed:
+    missing / unreachable / unrecognized -> OFF (not armed)."""
+    try:
+        with _connect() as conn, conn.cursor() as cur:
+            cur.execute("SELECT value FROM system_flags WHERE key=%s", (LIVE_ENABLED,))
+            row = cur.fetchone()
+            return bool(row) and str(row[0]).strip().lower() in {"on", "true", "1", "armed"}
+    except Exception as exc:  # noqa: BLE001 - fail closed
+        logger.warning("live_enabled read failed (treated as OFF): %s", exc)
+        return False
+
+
+def set_live_enabled(on: bool, reason: str = "") -> None:
+    with _connect() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO system_flags (key, value, reason, updated_at)
+            VALUES (%s, %s, %s, now())
+            ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value,
+                reason=EXCLUDED.reason, updated_at=now()
+            """,
+            (LIVE_ENABLED, "on" if on else "off", reason[:500]),
+        )
+        conn.commit()
+
+
 def set_kill_switch(tripped: bool, reason: str = "") -> None:
     value = "on" if tripped else "off"
     with _connect() as conn, conn.cursor() as cur:

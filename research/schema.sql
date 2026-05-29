@@ -46,7 +46,7 @@ CREATE TABLE IF NOT EXISTS execution_orders (
     claimed_at  TIMESTAMPTZ,
     finished_at TIMESTAMPTZ,
     status      TEXT NOT NULL DEFAULT 'pending'
-                CHECK (status IN ('pending','claimed','done','failed','denied')),
+                CHECK (status IN ('pending','claimed','done','failed','denied','observed')),
     action      TEXT NOT NULL CHECK (action IN ('enter','exit')),
     pair        TEXT NOT NULL,
     side        TEXT NOT NULL DEFAULT 'long',
@@ -75,4 +75,9 @@ CREATE TABLE IF NOT EXISTS system_flags (
 -- row / unreachable DB as tripped.
 INSERT INTO system_flags (key, value, reason)
 VALUES ('kill_switch', 'off', 'init')
+ON CONFLICT (key) DO NOTHING;
+
+-- Operator ON/OFF switch for placing REAL orders. Default OFF (disarmed).
+INSERT INTO system_flags (key, value, reason)
+VALUES ('live_enabled', 'off', 'init')
 ON CONFLICT (key) DO NOTHING;

@@ -338,3 +338,58 @@ def apply_context_gate(
         return ContextGate(True, 0.5, "neutral_reduce_stake")
     # risk_on
     return ContextGate(True, 1.0, "risk_on")
+
+
+# ---------------------------------------------------------------------------
+# Live signal builders — the strategy proposes a COMPLETE trade for the
+# Risk Governor to approve. (The governor recomputes size and may reject.)
+# ---------------------------------------------------------------------------
+def build_entry_signal(
+    pair: str,
+    entry_price: float,
+    atr: float,
+    atr_avg_20: float,
+    params: StrategyParams,
+    now_ts: float,
+    *,
+    take_profit_rr: float = 2.0,
+    max_holding_minutes: float = 1440,
+    signal_id: Optional[str] = None,
+    extra_quality: Optional[dict] = None,
+) -> dict:
+    """A full long-entry signal with ATR-based stop and an RR-based take-profit.
+
+    The strategy only emits this when its own trend/pullback/RSI rules fire, so
+    trend & higher-timeframe components score high; the governor fills in the
+    risk:reward / volatility / spread components from live market data.
+    """
+    stop = entry_price - atr * params.atr_stop_mult
+    take_profit = entry_price + atr * params.atr_stop_mult * take_profit_rr
+    quality = {
+        "trend_alignment": 85, "htf_confirmation": 85, "volume": 80,
+        "recent_performance": 75, "news_risk": 75, "orderbook_quality": 80,
+        "regime_quality": 80,
+    }
+    if extra_quality:
+        quality.update(extra_quality)
+    return {
+        "action": "enter", "pair": pair, "side": "long", "order_type": "market",
+        "entry_price": round(entry_price, 8), "price": round(entry_price, 8),
+        "stop_loss_price": round(stop, 8), "take_profit_price": round(take_profit, 8),
+        "leverage": 1, "margin_mode": "spot",
+        "max_holding_time_minutes": max_holding_minutes,
+        "signal_id": signal_id or f"{pair}-{int(now_ts)}",
+        "strategy_reason": "trend_pullback",
+        "atr": round(atr, 8), "atr_avg_20": round(atr_avg_20, 8) if atr_avg_20 else None,
+        "quality_components": quality,
+    }
+
+
+def build_exit_signal(pair: str, amount: Optional[float], now_ts: float,
+                      reason: str = "exit") -> dict:
+    """A flatten/exit signal. Exits are never blocked by risk caps."""
+    return {
+        "action": "exit", "pair": pair, "side": "long", "order_type": "market",
+        "amount": amount, "signal_id": f"{pair}-exit-{int(now_ts)}",
+        "strategy_reason": reason, "tag": reason,
+    }
