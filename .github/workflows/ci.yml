@@ -22,7 +22,7 @@ jobs:
         run: |
           python -m compileall -q \
             execution risk_governor weekly_target_manager research risk \
-            dashboard user_data/strategies scripts trade_pipeline.py
+            dashboard user_data/strategies user_data/hyperopts scripts trade_pipeline.py
 
   validate:
     runs-on: ubuntu-latest
