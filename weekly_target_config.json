@@ -1,0 +1,42 @@
+{
+  "_comment": "Weekly Target Manager configuration. The Risk Governor always has final authority; nothing here can loosen a governor limit. Env overrides: WT_<UPPER_KEY>.",
+
+  "weekly_target_multiplier": 4.0,
+  "weekly_target_mode": "aspirational",
+  "force_target": false,
+  "allow_risk_increase_to_reach_target": false,
+  "allow_martingale": false,
+  "allow_averaging_down": false,
+  "allow_leverage_increase": false,
+  "lock_profit_after_target_reached": true,
+  "stop_trading_after_target_reached": true,
+
+  "max_weekly_loss_percent": 5.0,
+  "max_daily_loss_percent": 2.0,
+  "max_total_drawdown_percent": 8.0,
+  "max_risk_per_trade_percent": 0.5,
+  "max_leverage": 2,
+  "max_open_positions": 1,
+  "max_capital_exposure_percent": 15.0,
+
+  "profit_lock_levels": [
+    { "weekly_profit_percent": 25,  "action": "reduce_risk_by_25_percent" },
+    { "weekly_profit_percent": 50,  "action": "reduce_risk_by_50_percent" },
+    { "weekly_profit_percent": 100, "action": "reduce_risk_by_75_percent" },
+    { "weekly_profit_percent": 300, "action": "stop_trading_and_lock_profit" }
+  ],
+
+  "max_trades_per_day": 3,
+  "max_trades_per_week": 10,
+  "minimum_minutes_between_trades": 60,
+  "cooldown_after_loss_minutes": 30,
+  "cooldown_after_win_minutes": 15,
+
+  "timezone": "Asia/Amman",
+  "trading_days_per_week": 7,
+
+  "required_daily_return_unrealistic_percent": 12.0,
+  "min_trades_for_expectancy": 10,
+  "caution_min_quality_score": 85,
+  "defensive_min_quality_score": 90
+}

@@ -1,0 +1,171 @@
+# =============================================================================
+# Autonomous BingX Trading System — orchestration
+# -----------------------------------------------------------------------------
+# Services:
+#   postgres   TimescaleDB (Postgres + time-series) — trade history + market_context
+#   freqtrade  trading engine (BingX spot, DRY-RUN) + REST API + FreqUI
+#   sidecar    scheduled LLM market-context research service
+#   watchdog   independent risk halt / kill-switch
+#
+# Everything reads secrets from `.env` (see .env.example). Dry-run is the
+# default and there is no code path that flips to live trading.
+# =============================================================================
+
+services:
+  postgres:
+    image: timescale/timescaledb:latest-pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-trading}
+      POSTGRES_USER: ${POSTGRES_USER:-trading}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_me_please}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./research/schema.sql:/docker-entrypoint-initdb.d/10-schema.sql:ro
+    ports:
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-trading} -d ${POSTGRES_DB:-trading}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  freqtrade:
+    build:
+      context: .
+      dockerfile: docker/freqtrade.Dockerfile
+    image: trding-freqtrade:local   # freqtrade + psycopg (for the AI gate)
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./user_data:/freqtrade/user_data
+    ports:
+      - "127.0.0.1:8080:8080"   # FreqUI + REST API — bound to localhost only
+                                # (reach it via SSH tunnel; not exposed publicly)
+    env_file:
+      - .env
+    command: >
+      trade
+      --config /freqtrade/user_data/config.json
+      --strategy MyStrategy
+      --logfile /freqtrade/user_data/logs/freqtrade.log
+
+  sidecar:
+    build:
+      context: .
+      dockerfile: research/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - .env
+    command: ["python", "-u", "research/sidecar.py"]
+
+  watchdog:
+    build:
+      context: .
+      dockerfile: risk/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - .env
+    command: ["python", "-u", "risk/watchdog.py"]
+
+  dashboard:
+    build:
+      context: .
+      dockerfile: dashboard/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - .env
+    # Bind-mount the static UI so dashboard look/layout changes apply on a plain
+    # `docker compose restart dashboard` (no image rebuild needed).
+    volumes:
+      - ./dashboard/static:/app/dashboard/static:ro
+    # On a public VPS with a domain, prefer the caddy proxy below (HTTPS) and
+    # firewall this port. Bound to localhost so it isn't exposed raw; reach it
+    # locally or via SSH tunnel. Change to "8050:8050" for plain local use.
+    ports:
+      - "127.0.0.1:8050:8050"
+
+  # Public HTTPS entry point for a custom subdomain (e.g. trade.ohmycompany.ai).
+  # Start with:  docker compose --profile public up -d
+  caddy:
+    image: caddy:2
+    profiles: ["public"]
+    restart: unless-stopped
+    depends_on:
+      - dashboard
+    env_file:
+      - .env
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+  # ---------------------------------------------------------------------------
+  # LIVE browser-execution path (REAL MONEY). Gated behind the "live-browser"
+  # compose profile AND the LIVE_BROWSER_TRADING_ENABLED env flag, so it never
+  # starts by accident. Start with:  docker compose --profile live-browser up -d
+  # See docs/BROWSER_EXECUTION.md.
+  # ---------------------------------------------------------------------------
+  execution-bridge:
+    build:
+      context: .
+      dockerfile: execution/Dockerfile
+    profiles: ["live-browser"]
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - .env
+    # Internal network only — no host port published.
+    expose:
+      - "8090"
+    command: ["python", "-m", "uvicorn", "bridge:app", "--host", "0.0.0.0", "--port", "8090"]
+
+  executor:
+    build:
+      context: .
+      dockerfile: execution/Dockerfile
+    profiles: ["live-browser"]
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - .env
+    volumes:
+      - browser_data:/data   # persistent BingX login profile + order screenshots (browser fallback)
+    command: ["python", "-u", "execution/executor.py"]
+
+  live-watchdog:
+    build:
+      context: .
+      dockerfile: execution/Dockerfile
+    profiles: ["live-browser"]
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - .env
+    command: ["python", "-u", "execution/live_watchdog.py"]
+
+volumes:
+  pgdata:
+  browser_data:
+  caddy_data:
+  caddy_config:

@@ -1,0 +1,44 @@
+# --- Secrets / env ---
+.env
+*.env
+!.env.example
+
+# --- Freqtrade user data (runtime) ---
+user_data/logs/*
+!user_data/logs/.gitkeep
+user_data/data/
+user_data/backtest_results/
+user_data/hyperopt_results/
+user_data/plot/
+user_data/*.sqlite
+user_data/*.sqlite-shm
+user_data/*.sqlite-wal
+user_data/tradesv3*.sqlite*
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.venv/
+venv/
+env/
+
+# --- Node / dashboard ---
+dashboard/node_modules/
+dashboard/dist/
+dashboard/.vite/
+
+# --- OS / editor ---
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# --- Postgres volume (if bind-mounted locally) ---
+pgdata/

@@ -1,0 +1,9 @@
+{
+  "version": 2,
+  "framework": null,
+  "buildCommand": null,
+  "installCommand": null,
+  "outputDirectory": "dashboard/static",
+  "cleanUrls": true,
+  "github": { "enabled": false }
+}

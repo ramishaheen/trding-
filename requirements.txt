@@ -1,0 +1,10 @@
+# Shared Python deps for the sidecar, watchdog, and tests.
+# Freqtrade itself runs from its official Docker image and is NOT installed here.
+anthropic>=0.39.0
+psycopg[binary]>=3.1
+feedparser>=6.0
+requests>=2.31
+python-dotenv>=1.0
+pandas>=2.1
+# pandas-ta removed: only used by MyStrategy inside the freqtrade image (not sidecar/watchdog). 0.3.x is gone from PyPI and 0.4.x needs Python>=3.12, breaking the py3.11 build.
+pytest>=8.0

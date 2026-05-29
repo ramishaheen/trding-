@@ -1,0 +1,8 @@
+# Deps for the live execution path (API-first + browser fallback).
+ccxt>=4.3
+playwright>=1.45
+fastapi>=0.110
+uvicorn[standard]>=0.29
+pydantic>=2.6
+psycopg[binary]>=3.1
+requests>=2.31

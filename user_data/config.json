@@ -1,0 +1,139 @@
+{
+    "$schema": "https://schema.freqtrade.io/schema.json",
+    "_comment": "BingX spot, DRY-RUN by default. Secrets are injected via FREQTRADE__* env vars (see .env.example). DO NOT set dry_run to false here; going live is a manual, documented Phase-4 step.",
+
+    "max_open_trades": 3,
+    "stake_currency": "USDT",
+    "stake_amount": 100,
+    "tradable_balance_ratio": 0.99,
+    "fiat_display_currency": "USD",
+    "timeframe": "1h",
+
+    "dry_run": true,
+    "dry_run_wallet": 1000,
+    "cancel_open_orders_on_exit": true,
+
+    "trading_mode": "spot",
+    "margin_mode": "",
+
+    "unfilledtimeout": {
+        "entry": 10,
+        "exit": 10,
+        "exit_timeout_count": 0,
+        "unit": "minutes"
+    },
+
+    "entry_pricing": {
+        "price_side": "same",
+        "use_order_book": true,
+        "order_book_top": 1,
+        "price_last_balance": 0.0,
+        "check_depth_of_market": {
+            "enabled": false,
+            "bids_to_ask_delta": 1
+        }
+    },
+    "exit_pricing": {
+        "price_side": "same",
+        "use_order_book": true,
+        "order_book_top": 1
+    },
+
+    "exchange": {
+        "name": "bingx",
+        "key": "",
+        "secret": "",
+        "ccxt_config": {},
+        "ccxt_async_config": {},
+        "pair_whitelist": [
+            "BTC/USDT",
+            "ETH/USDT",
+            "SOL/USDT"
+        ],
+        "pair_blacklist": [
+            ".*(UP|DOWN|BULL|BEAR)/.*"
+        ]
+    },
+
+    "order_types": {
+        "entry": "limit",
+        "exit": "limit",
+        "stoploss": "market",
+        "stoploss_on_exchange": true,
+        "stoploss_on_exchange_interval": 60,
+        "stoploss_on_exchange_limit_ratio": 0.99
+    },
+
+    "pairlists": [
+        { "method": "StaticPairList" }
+    ],
+
+    "_backtest_comment": "Fees + slippage are configured for honest backtests. BingX spot taker fee is ~0.001 (0.1%). Slippage is approximated via a custom price during backtest in the strategy / via --fee on the CLI.",
+    "fee": 0.001,
+
+    "telegram": {
+        "enabled": false,
+        "token": "",
+        "chat_id": "",
+        "notification_settings": {
+            "status": "on",
+            "warning": "on",
+            "startup": "on",
+            "entry": "on",
+            "exit": "on",
+            "protection_trigger": "on"
+        }
+    },
+
+    "_webhook_comment": "Forwards dry-run entry/exit FILL decisions to the execution bridge, which (only if LIVE_BROWSER_TRADING_ENABLED=on) mirrors them to the live BingX web UI via the browser subagent. Disabled by default. The bridge is reachable only on the internal docker network. Freqtrade itself stays dry_run:true.",
+    "webhook": {
+        "enabled": false,
+        "url": "http://execution-bridge:8090/webhook/decision",
+        "format": "json",
+        "retries": 2,
+        "retry_delay": 0.2,
+        "entry_fill": {
+            "action": "enter",
+            "pair": "{pair}",
+            "side": "long",
+            "order_type": "market",
+            "stake": "{stake_amount}",
+            "amount": "{amount}",
+            "price": "{open_rate}",
+            "tag": "{enter_tag}"
+        },
+        "exit_fill": {
+            "action": "exit",
+            "pair": "{pair}",
+            "side": "long",
+            "order_type": "market",
+            "amount": "{amount}",
+            "tag": "{exit_reason}"
+        }
+    },
+
+    "api_server": {
+        "enabled": true,
+        "listen_ip_address": "0.0.0.0",
+        "listen_port": 8080,
+        "verbosity": "error",
+        "enable_openapi": true,
+        "jwt_secret_key": "change_me_random_string",
+        "ws_token": "change_me_random_token",
+        "CORS_origins": [],
+        "username": "freqtrader",
+        "password": "change_me_please"
+    },
+
+    "bot_name": "bingx-paper-bot",
+    "initial_state": "running",
+    "force_entry_enable": false,
+
+    "internals": {
+        "process_throttle_secs": 5,
+        "heartbeat_interval": 60
+    },
+
+    "dataformat_ohlcv": "feather",
+    "logfile": "user_data/logs/freqtrade.log"
+}
