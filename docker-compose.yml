@@ -94,7 +94,7 @@ services:
       - "8090"
     command: ["python", "-m", "uvicorn", "bridge:app", "--host", "0.0.0.0", "--port", "8090"]
 
-  browser-agent:
+  executor:
     build:
       context: .
       dockerfile: execution/Dockerfile
@@ -106,8 +106,8 @@ services:
     env_file:
       - .env
     volumes:
-      - browser_data:/data
-    command: ["python", "-u", "execution/browser_agent.py"]
+      - browser_data:/data   # persistent BingX login profile + order screenshots (browser fallback)
+    command: ["python", "-u", "execution/executor.py"]
 
   live-watchdog:
     build:
@@ -120,8 +120,6 @@ services:
         condition: service_healthy
     env_file:
       - .env
-    volumes:
-      - browser_data:/data
     command: ["python", "-u", "execution/live_watchdog.py"]
 
 volumes:

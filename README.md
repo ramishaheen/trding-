@@ -34,11 +34,13 @@ and flatten positions if hard limits are breached.
 ├── risk/
 │   ├── watchdog.py             # independent daily-loss / drawdown kill switch
 │   └── risk_logic.py           # pure, unit-tested limit rules
-├── execution/                  # OPTIONAL live browser-execution path (REAL MONEY)
+├── execution/                  # OPTIONAL live-execution path (REAL MONEY)
 │   ├── execution_logic.py      # pure, unit-tested gate + decision validation
+│   ├── bingx_api.py            # BingX API (ccxt): account reads + order placement (primary)
 │   ├── bridge.py               # FastAPI: Freqtrade webhook -> gate -> order queue
-│   ├── browser_agent.py        # Playwright/Chromium subagent placing live orders
-│   ├── live_watchdog.py        # independent live-account halt + flatten
+│   ├── executor.py             # queue consumer: API first, browser fallback
+│   ├── browser_agent.py        # Playwright/Chromium subagent (fallback order path)
+│   ├── live_watchdog.py        # independent live-account halt + flatten (API reads)
 │   ├── selectors.py            # centralized BingX UI selectors (verify before use)
 │   └── store.py                # Postgres order queue + kill switch + snapshot
 ├── dashboard/                  # FreqUI for Phases 0–2; optional panel for 3+

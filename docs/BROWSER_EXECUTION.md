@@ -22,15 +22,18 @@
         ▼
  execution_orders  (Postgres queue)
         ▼
- browser-agent (Playwright/Chromium)  ──▶  LIVE BingX web UI  ──▶  REAL ORDER
+ executor  ──▶ API order (ccxt, PRIMARY)  ──▶  LIVE BingX  ──▶  REAL ORDER
+        │         └─ on failure ─▶ browser subagent (Playwright fallback) ─▶ same
         ▲
- live-watchdog  ──▶ scrapes real account, trips kill switch + flattens on breach
+ live-watchdog ─▶ reads real account via API, trips kill switch + flattens on breach
 ```
 
-Freqtrade stays in **dry-run** as the decision engine — its config is never
-flipped to live. Its dry-run fills are forwarded as *decisions* that the browser
-subagent mirrors onto the live account. **Real money is at risk on the browser
-path regardless of Freqtrade's dry-run setting.**
+Order path is configurable via `ORDER_PATH` (`api` | `browser` | `both`,
+default `both` = API first, browser fallback). **Account reads always use the
+API.** Freqtrade stays in **dry-run** as the decision engine — its config is
+never flipped to live. Its dry-run fills are forwarded as *decisions* that the
+executor mirrors onto the live account. **Real money is at risk regardless of
+Freqtrade's dry-run setting.**
 
 ## Safety design (fail-closed)
 
@@ -62,23 +65,30 @@ nothing gets placed.
 
 ## One-time setup
 
-1. **Verify selectors** (above). Do not skip this.
-2. **Fund a dedicated BingX sub-account** with only what you can lose.
-3. **Tighten limits** in `.env`: `TOTAL_CAPITAL_USDT`, `PER_TRADE_STAKE_USDT`,
+1. **Put your API keys in `.env`** (git-ignored): `FREQTRADE__EXCHANGE__KEY` and
+   `FREQTRADE__EXCHANGE__SECRET`. These are used for account reads and the
+   primary (API) order path. Restrict the key: **spot only, withdrawals
+   disabled, IP-allowlisted.**
+2. **Choose the order path** via `ORDER_PATH` (`api` | `browser` | `both`).
+   `both` (default) tries the API first and falls back to the browser subagent.
+3. **Fund a dedicated BingX sub-account** with only what you can lose.
+4. **Tighten limits** in `.env`: `TOTAL_CAPITAL_USDT`, `PER_TRADE_STAKE_USDT`,
    `MAX_OPEN_TRADES`, `DAILY_MAX_LOSS_PCT`, `MAX_DRAWDOWN_PCT`,
    `LIVE_PAIR_ALLOWLIST`.
-4. **Log in once, by hand**, into the automation browser profile (handles 2FA):
+5. **(Only if using the browser fallback) Verify selectors** in
+   `execution/selectors.py` against the live site, then **log in once, by hand**,
+   into the automation browser profile (handles 2FA):
    ```bash
    # headful login — opens a real Chrome window using the persistent profile
    docker compose run --rm -e BROWSER_HEADLESS=false \
      -e LIVE_BROWSER_TRADING_ENABLED=on \
-     browser-agent python -c "from playwright.sync_api import sync_playwright; \
+     executor python -c "from playwright.sync_api import sync_playwright; \
 import os; pw=sync_playwright().start(); \
 ctx=pw.chromium.launch_persistent_context(os.environ['BROWSER_PROFILE_DIR'], headless=False); \
 ctx.new_page().goto('https://bingx.com/en/login/'); input('Log in + 2FA, then press Enter...')"
    ```
    The session persists in the `browser_data` volume; the repo never stores
-   your password.
+   your password. (Pure-API mode, `ORDER_PATH=api`, needs no browser login.)
 
 ## Going live
 
@@ -87,11 +97,11 @@ ctx.new_page().goto('https://bingx.com/en/login/'); input('Log in + 2FA, then pr
    (this only forwards decisions; Freqtrade stays dry-run).
 3. Start the gated services:
    ```bash
-   docker compose --profile live-browser up -d execution-bridge browser-agent live-watchdog
+   docker compose --profile live-browser up -d execution-bridge executor live-watchdog
    docker compose restart freqtrade   # pick up the webhook config
    ```
 4. **Watch the first trades.** Tail the logs, watch the audit screenshots in the
-   `browser_data` volume, and keep the kill switch handy:
+   `browser_data` volume (browser fallback only), and keep the kill switch handy:
    ```bash
    curl -X POST http://localhost:8090/stop   # only if you publish the port; otherwise exec into the container
    ```
@@ -101,11 +111,12 @@ ctx.new_page().goto('https://bingx.com/en/login/'); input('Log in + 2FA, then pr
 - **Halt now:** `POST /stop` on the bridge (trips kill switch; watchdog flattens).
 - **Disable the path:** set `LIVE_BROWSER_TRADING_ENABLED=false`, set the webhook
   back to `"enabled": false`, and `docker compose stop execution-bridge
-  browser-agent live-watchdog`.
+  executor live-watchdog`.
 
 ## Tests
 
-The gate, decision parsing, kill-switch semantics, and caps are unit-tested in
-`tests/test_execution.py` (`pytest -q`). The browser-driving and scraping code
-is integration-level and must be validated manually against the live site (in a
-tiny-stake dry run) before you trust it.
+The gate, decision parsing, kill-switch semantics, caps, and the API helpers
+(account summarisation + order shapes via a fake client) are unit-tested in
+`tests/test_execution.py` and `tests/test_bingx_api.py` (`pytest -q`). The
+browser-driving code is integration-level and must be validated manually against
+the live site (in a tiny-stake dry run) before you trust it.
