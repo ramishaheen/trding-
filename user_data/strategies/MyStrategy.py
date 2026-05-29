@@ -41,6 +41,7 @@ from strategy_logic import (
     StrategyParams,
     apply_context_gate,
     atr_stoploss_ratio,
+    bias_quality_overrides,
     build_entry_signal,
     build_exit_signal,
 )
@@ -78,6 +79,29 @@ def _read_latest_market_context() -> tuple[Optional[str], Optional[float], bool]
     except Exception as exc:  # noqa: BLE001 - fail open by design
         logger.warning("market_context read failed (gate fails open): %s", exc)
     return None, None, False
+
+
+def _read_pair_bias(pair: str) -> Optional[str]:
+    """Latest LLM per-pair bias (bullish|bearish|neutral) for `pair`, or None.
+    Fails open (None) so a missing DB/driver never blocks the paper engine."""
+    dsn = os.environ.get("DATABASE_URL")
+    if not dsn:
+        return None
+    try:
+        import psycopg
+
+        with psycopg.connect(dsn, connect_timeout=3) as conn, conn.cursor() as cur:
+            cur.execute("SELECT per_pair_bias FROM market_context "
+                        "ORDER BY created_at DESC LIMIT 1")
+            row = cur.fetchone()
+            if row and row[0]:
+                data = row[0] if isinstance(row[0], list) else json.loads(row[0])
+                for item in data:
+                    if isinstance(item, dict) and str(item.get("pair", "")).upper() == pair.upper():
+                        return str(item.get("bias", "")).lower()
+    except Exception as exc:  # noqa: BLE001 - fail open
+        logger.warning("per-pair bias read failed: %s", exc)
+    return None
 
 
 def _emit_signal(payload: dict) -> None:
@@ -222,11 +246,15 @@ class MyStrategy(IStrategy):
             atr_value = float(df["atr"].iloc[-1])
             atr_avg = float(df["atr"].tail(20).mean()) if len(df) >= 20 else atr_value
             if atr_value > 0 and not pd.isna(atr_value):
+                # A bearish LLM read on this coin lowers its trade-quality score
+                # (can only tighten — never raises the bar to open a trade).
+                extra_quality = bias_quality_overrides(_read_pair_bias(pair))
                 _emit_signal(build_entry_signal(
                     pair, float(rate), atr_value, atr_avg, p,
                     current_time.timestamp(),
                     take_profit_rr=float(self.take_profit_rr.value),
                     max_holding_minutes=int(self.max_holding_minutes.value),
+                    extra_quality=extra_quality,
                 ))
         return True
 

@@ -393,3 +393,18 @@ def build_exit_signal(pair: str, amount: Optional[float], now_ts: float,
         "amount": amount, "signal_id": f"{pair}-exit-{int(now_ts)}",
         "strategy_reason": reason, "tag": reason,
     }
+
+
+def bias_quality_overrides(bias: Optional[str]) -> dict:
+    """Translate the LLM's per-pair bias into trade-quality component overrides.
+
+    SOFT-GATE INVARIANT: this can only LOWER quality (tighten). A *bearish* read
+    pushes several components down so the governor's quality score is more likely
+    to fall below the minimum and reject the trade. *bullish* / *neutral* / None
+    return {} — the LLM never RAISES the bar to open a trade the strategy
+    wouldn't otherwise take. It can restrict, never force.
+    """
+    if (bias or "").lower() == "bearish":
+        return {"trend_alignment": 30, "regime_quality": 15,
+                "news_risk": 20, "recent_performance": 40}
+    return {}

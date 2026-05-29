@@ -130,13 +130,21 @@ def _market_context():
     try:
         import psycopg
         with psycopg.connect(DATABASE_URL, connect_timeout=3) as conn, conn.cursor() as cur:
-            cur.execute("SELECT regime, risk_state, confidence, sentiment, pause_trading, rationale "
+            cur.execute("SELECT regime, risk_state, confidence, sentiment, pause_trading, "
+                        "rationale, key_risks, per_pair_bias "
                         "FROM market_context ORDER BY created_at DESC LIMIT 1")
             r = cur.fetchone()
             if not r:
                 return None
+
+            def _j(v):
+                if v is None:
+                    return []
+                return v if isinstance(v, (list, dict)) else json.loads(v)
+
             return {"regime": r[0], "risk_state": r[1], "confidence": r[2],
-                    "sentiment": r[3], "pause_trading": r[4], "rationale": r[5]}
+                    "sentiment": r[3], "pause_trading": r[4], "rationale": r[5],
+                    "key_risks": _j(r[6]), "per_pair_bias": _j(r[7])}
     except Exception:
         return None
 
@@ -178,7 +186,12 @@ def _demo_state() -> dict:
         },
         "market_context": {"regime": "trending_up", "risk_state": "risk_on", "confidence": 0.62,
                            "sentiment": 0.3, "pause_trading": False,
-                           "rationale": "Demo: steady uptrend, supportive macro."},
+                           "rationale": "Demo: steady uptrend, supportive macro.",
+                           "key_risks": ["US CPI print tomorrow", "thin weekend liquidity"],
+                           "per_pair_bias": [
+                               {"pair": "BTC/USDT", "bias": "bullish", "note": "above 200-day"},
+                               {"pair": "ETH/USDT", "bias": "neutral", "note": "range-bound"},
+                               {"pair": "SOL/USDT", "bias": "bearish", "note": "lost support"}]},
         "positions": [{"pair": "BTC/USDT", "amount": 0.0012, "open_rate": 61000, "profit_pct": 1.4}],
         "trades": [
             {"pair": "BTC/USDT", "profit_pct": 1.4, "open_date": "—", "is_open": True},

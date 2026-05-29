@@ -125,6 +125,8 @@
       <div class="row"><span class="k">News tone <span class="help" data-tip="Overall mood of recent news: negative (−1) to positive (+1).">?</span></span><span class="v" id="senti">—</span></div>
       <div class="row"><span class="k">Paused for news <span class="help" data-tip="During big news events the bot pauses new trades but still protects what's open.">?</span></span><span class="v" id="newsPause">—</span></div>
       <div class="tiny muted" id="rationale" style="margin-top:8px"></div>
+      <div id="pairBias" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:10px"></div>
+      <div class="tiny" id="keyRisks" style="margin-top:8px"></div>
     </div>
 
     <!-- Weekly goal -->
@@ -198,7 +200,11 @@ const DEMO = {demo:true,kill_switch_active:false,
     remaining_profit_needed:293.5,remaining_trading_days:5,required_daily_return_percent:38,
     target_status:"unrealistic_under_current_risk_limits",risk_mode:"normal",trading_allowed:true,profit_locked:false},
   market_context:{regime:"trending_up",risk_state:"risk_on",confidence:0.62,sentiment:0.3,pause_trading:false,
-    rationale:"Steady uptrend, calm news."},
+    rationale:"Steady uptrend, calm news.",
+    key_risks:["US CPI print tomorrow","thin weekend liquidity"],
+    per_pair_bias:[{pair:"BTC/USDT",bias:"bullish",note:"above 200-day"},
+      {pair:"ETH/USDT",bias:"neutral",note:"range-bound"},
+      {pair:"SOL/USDT",bias:"bearish",note:"lost support"}]},
   positions:[{pair:"BTC/USDT",amount:0.0012,open_rate:61000,profit_pct:1.4}],
   trades:[{pair:"BTC/USDT",profit_pct:1.4,is_open:true},{pair:"ETH/USDT",profit_pct:2.1,is_open:false},
     {pair:"SOL/USDT",profit_pct:-0.6,is_open:false}],
@@ -270,6 +276,17 @@ function render(s){
   document.getElementById('senti').textContent=mc.sentiment!=null?(mc.sentiment>0.15?'Positive':mc.sentiment<-0.15?'Negative':'Neutral'):'—';
   const np=document.getElementById('newsPause'); np.textContent=mc.pause_trading?'Yes':'No'; np.className='v '+(mc.pause_trading?'neg':'pos');
   document.getElementById('rationale').textContent=mc.rationale||'';
+
+  // Per-coin view (AI bias per coin) — bearish coins are the ones the bot will be pickier on
+  const pb=document.getElementById('pairBias');
+  const biasColor={bullish:'var(--good)',bearish:'var(--bad)',neutral:'var(--muted)'};
+  pb.innerHTML=(mc.per_pair_bias&&mc.per_pair_bias.length)? mc.per_pair_bias.map(b=>
+    `<span class="pill" title="${(b.note||'').replace(/"/g,'')}" style="color:${biasColor[b.bias]||'var(--muted)'}">
+       ${(b.pair||'').replace('/USDT','')}: ${b.bias||'—'}</span>`).join('') : '';
+  // Watch out for (key risks)
+  const kr=document.getElementById('keyRisks');
+  kr.innerHTML=(mc.key_risks&&mc.key_risks.length)?
+    '<span class="muted">Watch out for:</span> '+mc.key_risks.map(r=>`• ${r}`).join('  ') : '';
 
   const comp=wt.target_completion_percent||0;
   document.getElementById('wtCompletion').textContent=comp.toFixed(1)+'%';
