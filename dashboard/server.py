@@ -19,9 +19,13 @@ import time
 from pathlib import Path
 
 import hashlib
+import logging
 import secrets
 
 import requests
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s [dashboard] %(message)s")
+logger = logging.getLogger("dashboard")
 from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -104,8 +108,14 @@ async def login(request: Request) -> JSONResponse:
     return JSONResponse({"ok": False}, status_code=401)
 
 FREQTRADE_API_URL = os.environ.get("FREQTRADE_API_URL", "http://freqtrade:8080").rstrip("/")
-FREQTRADE_AUTH = (os.environ.get("FREQTRADE_USERNAME", "freqtrader"),
-                  os.environ.get("FREQTRADE_PASSWORD", ""))
+# Accept either the dashboard-specific vars or the same FREQTRADE__API_SERVER__*
+# vars Freqtrade itself reads, so one password in .env drives both sides.
+FREQTRADE_AUTH = (
+    os.environ.get("FREQTRADE__API_SERVER__USERNAME")
+    or os.environ.get("FREQTRADE_USERNAME", "freqtrader"),
+    os.environ.get("FREQTRADE__API_SERVER__PASSWORD")
+    or os.environ.get("FREQTRADE_PASSWORD", ""),
+)
 BRIDGE_URL = os.environ.get("EXECUTION_BRIDGE_URL", "http://execution-bridge:8090").rstrip("/")
 WEBHOOK_TOKEN = os.environ.get("EXECUTION_WEBHOOK_TOKEN", "")
 DATABASE_URL = os.environ.get("DATABASE_URL")
@@ -149,12 +159,23 @@ def _market_context():
         return None
 
 
+_LAST_FT_ERROR = ""
+
+
 def _freqtrade(path: str):
+    global _LAST_FT_ERROR
     try:
         resp = requests.get(f"{FREQTRADE_API_URL}/api/v1/{path}", auth=FREQTRADE_AUTH, timeout=5)
+        if resp.status_code == 401:
+            _LAST_FT_ERROR = "401 unauthorized — dashboard password does not match Freqtrade api_server"
+            logger.warning("freqtrade %s -> 401 (check FREQTRADE__API_SERVER__PASSWORD)", path)
+            return None
         resp.raise_for_status()
+        _LAST_FT_ERROR = ""
         return resp.json()
-    except Exception:
+    except Exception as exc:  # noqa: BLE001
+        _LAST_FT_ERROR = f"{type(exc).__name__}: {exc}"
+        logger.warning("freqtrade %s unreachable: %s", path, exc)
         return None
 
 
@@ -279,6 +300,14 @@ def state() -> JSONResponse:
         "trades": positions,
         "equity_curve": [],
         "ts": time.time(),
+        # Diagnostics — visit /api/state to see why a panel is blank.
+        "_diag": {
+            "freqtrade_reachable": balance is not None or status is not None or profit is not None,
+            "freqtrade_wallet_total": (balance or {}).get("total"),
+            "freqtrade_last_error": _LAST_FT_ERROR,
+            "governor_running": _db_flag("risk_status") is not None,
+            "sidecar_has_context": mc is not None,
+        },
     })
 
 
