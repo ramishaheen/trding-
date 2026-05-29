@@ -102,6 +102,9 @@ class MyStrategy(IStrategy):
     timeframe = "1h"
     can_short = False  # spot, long-only
 
+    # Moved from config.json: freqtrade 2026.x rejects 'protections' in the config file.
+    protections = [{'method': 'CooldownPeriod', 'stop_duration_candles': 4}, {'method': 'MaxDrawdown', 'lookback_period_candles': 48, 'trade_limit': 10, 'stop_duration_candles': 12, 'max_allowed_drawdown': 0.1}, {'method': 'StoplossGuard', 'lookback_period_candles': 24, 'trade_limit': 4, 'stop_duration_candles': 12, 'only_per_pair': False}, {'method': 'LowProfitPairs', 'lookback_period_candles': 360, 'trade_limit': 4, 'stop_duration_candles': 60, 'required_profit': 0.0}]
+
     # ROI / stoploss: the real stop is ATR-based via custom_stoploss; this is a
     # conservative static backstop.
     minimal_roi = {"0": 0.10, "240": 0.04, "480": 0.02, "720": 0}

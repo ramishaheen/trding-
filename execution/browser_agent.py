@@ -22,7 +22,7 @@ import os
 from datetime import datetime, timezone
 from pathlib import Path
 
-from selectors import SELECTORS, SPOT_TRADE_URL
+from bingx_selectors import SELECTORS, SPOT_TRADE_URL
 
 logger = logging.getLogger("browser_agent")
 

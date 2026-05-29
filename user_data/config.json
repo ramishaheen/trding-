@@ -68,34 +68,6 @@
         { "method": "StaticPairList" }
     ],
 
-    "protections": [
-        {
-            "method": "CooldownPeriod",
-            "stop_duration_candles": 4
-        },
-        {
-            "method": "MaxDrawdown",
-            "lookback_period_candles": 48,
-            "trade_limit": 10,
-            "stop_duration_candles": 12,
-            "max_allowed_drawdown": 0.10
-        },
-        {
-            "method": "StoplossGuard",
-            "lookback_period_candles": 24,
-            "trade_limit": 4,
-            "stop_duration_candles": 12,
-            "only_per_pair": false
-        },
-        {
-            "method": "LowProfitPairs",
-            "lookback_period_candles": 360,
-            "trade_limit": 4,
-            "stop_duration_candles": 60,
-            "required_profit": 0.0
-        }
-    ],
-
     "_backtest_comment": "Fees + slippage are configured for honest backtests. BingX spot taker fee is ~0.001 (0.1%). Slippage is approximated via a custom price during backtest in the strategy / via --fee on the CLI.",
     "fee": 0.001,
 
