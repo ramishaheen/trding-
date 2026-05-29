@@ -87,6 +87,8 @@ Strategy Engine → Weekly Target Manager → Risk Governor (FINAL) → Executio
 
 ### Dashboard
 
+![Dashboard preview](dashboard/preview_full.png)
+
 A polished dark/glassmorphism dashboard (`dashboard/`) shows the risk-governor
 status, weekly-target progress, loss-limit gauges, the LLM regime/sentiment,
 positions, equity, and a prominent **STOP** button (trips the shared kill
