@@ -4,7 +4,6 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>My Trading Bot</title>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <style>
   :root{
     --bg0:#0a0e1a; --bg1:#121a38; --card:rgba(255,255,255,.05); --card-bd:rgba(255,255,255,.10);
@@ -306,13 +305,19 @@ function render(s){
 }
 
 function drawChart(data){
-  const ctx=document.getElementById('equityChart');
-  const labels=data.map((_,i)=>i);
-  if(chart){chart.data.labels=labels;chart.data.datasets[0].data=data;chart.update('none');return;}
-  chart=new Chart(ctx,{type:'line',data:{labels,datasets:[{data,borderColor:'#2bd49a',
-    backgroundColor:'rgba(43,212,154,.12)',fill:true,tension:.35,pointRadius:0,borderWidth:2}]},
-    options:{plugins:{legend:{display:false}},scales:{x:{display:false},
-      y:{ticks:{color:'#9aa4c2'},grid:{color:'rgba(255,255,255,.05)'}}}}});
+  // Native canvas line — no external library, works fully offline.
+  const c=document.getElementById('equityChart');
+  if(!c||!c.getContext||!data||data.length<2) return;
+  const W=c.width=c.clientWidth||300, H=c.height=170, pad=16;
+  const ctx=c.getContext('2d'); ctx.clearRect(0,0,W,H);
+  const min=Math.min(...data), max=Math.max(...data), span=(max-min)||1;
+  const X=i=>pad+i*(W-2*pad)/(data.length-1);
+  const Y=v=>H-pad-((v-min)/span)*(H-2*pad);
+  ctx.beginPath(); ctx.moveTo(X(0),Y(data[0])); data.forEach((v,i)=>ctx.lineTo(X(i),Y(v)));
+  ctx.lineTo(X(data.length-1),H-pad); ctx.lineTo(X(0),H-pad); ctx.closePath();
+  ctx.fillStyle='rgba(43,212,154,.12)'; ctx.fill();
+  ctx.beginPath(); ctx.moveTo(X(0),Y(data[0])); data.forEach((v,i)=>ctx.lineTo(X(i),Y(v)));
+  ctx.strokeStyle='#2bd49a'; ctx.lineWidth=2; ctx.stroke();
 }
 
 async function toggleArm(){
@@ -337,6 +342,7 @@ async function emergencyStop(){
 }
 
 async function tick(){ render(await fetchState()); }
+render(DEMO);            // show the full screen instantly, even with no server/network
 tick(); setInterval(tick,5000);
 </script>
 </body>
