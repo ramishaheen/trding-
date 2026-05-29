@@ -240,6 +240,9 @@ class MyStrategy(IStrategy):
     def confirm_trade_entry(
         self, pair, order_type, amount, rate, time_in_force, current_time, entry_tag, side, **kwargs
     ) -> bool:
+        # Operator-forced (manual) entries via the API bypass the soft gate.
+        if entry_tag == "force_entry":
+            return True
         risk_state, confidence, pause = _read_latest_market_context()
         gate = apply_context_gate(risk_state, confidence, self._params(), pause_trading=pause)
         if not gate.allow_new_entries:
@@ -281,6 +284,9 @@ class MyStrategy(IStrategy):
         self, pair, current_time, current_rate, proposed_stake, min_stake, max_stake,
         leverage, entry_tag, side, **kwargs
     ) -> float:
+        # Don't shrink/skip an operator-forced entry.
+        if entry_tag == "force_entry":
+            return proposed_stake
         risk_state, confidence, pause = _read_latest_market_context()
         gate = apply_context_gate(risk_state, confidence, self._params(), pause_trading=pause)
         stake = proposed_stake * gate.stake_multiplier

@@ -128,7 +128,6 @@
 
     "bot_name": "bingx-paper-bot",
     "initial_state": "running",
-    "force_entry_enable": false,
 
     "internals": {
         "process_throttle_secs": 5,

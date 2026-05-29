@@ -12,14 +12,19 @@ U=$(grep -E '^FREQTRADE__API_SERVER__USERNAME=' .env 2>/dev/null | cut -d= -f2-)
 P=$(grep -E '^FREQTRADE__API_SERVER__PASSWORD=' .env 2>/dev/null | cut -d= -f2-); P=${P:-change_me_please}
 
 echo "Forcing a PAPER entry on $PAIR ..."
-RESP=$(curl -fsS -u "$U:$P" -H "Content-Type: application/json" \
-  -d "{\"pair\":\"$PAIR\"}" http://localhost:8080/api/v1/forceenter 2>/dev/null)
-if [ -z "$RESP" ]; then
-  echo "Could not reach Freqtrade API. Check: docker compose ps  (is freqtrade up?)"
-  echo "and that force_entry_enable:true is in config.json (then: docker compose restart freqtrade)."
-  exit 1
-fi
-echo "$RESP"
+# No -f: we want the real response body + status even on a 4xx/5xx (e.g.
+# "Failed to enter position"), not a generic connection error.
+BODY=$(curl -sS -u "$U:$P" -H "Content-Type: application/json" \
+  -d "{\"pair\":\"$PAIR\"}" -w "\n%{http_code}" \
+  http://localhost:8080/api/v1/forceenter 2>&1)
+CODE=$(printf '%s' "$BODY" | tail -n1)
+echo "HTTP $CODE"
+printf '%s\n' "$BODY" | sed '$d'   # body without the trailing status line
 echo
-echo "Now refresh the dashboard — you should see it under 'Open trades'."
-echo "The bot will manage and exit it per the strategy (ROI / stop / signal)."
+case "$CODE" in
+  200) echo "Entered. Refresh the dashboard — it should appear under 'Open trades'." ;;
+  000) echo "No response. Is Freqtrade up?  docker compose ps  /  logs freqtrade" ;;
+  *)   echo "Freqtrade rejected it (see body above). Common causes: force_entry_enable"
+       echo "not active (restart freqtrade after deploy), max_open_trades reached, or"
+       echo "the pair already has an open trade." ;;
+esac
