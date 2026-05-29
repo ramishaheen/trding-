@@ -203,6 +203,42 @@ def _demo_state() -> dict:
     }
 
 
+def _paper_status_from_freqtrade(balance, count, positions) -> dict:
+    """Synthesize the 'Your money'/safety fields from Freqtrade's dry-run wallet
+    when the Risk Governor (executor) isn't running. Uses only stable REST
+    fields (balance.total, count.current). Shows real paper numbers in the
+    paper phase without keys or the live profile."""
+    total = (balance or {}).get("total")
+    open_n = (count or {}).get("current") if count else len(positions)
+    return {
+        "trading_enabled": True, "risk_mode": "normal", "trading_mode": "Paper (dry-run)",
+        "account_balance": total or 0, "available_margin": total or 0,
+        "daily_pnl": 0, "weekly_pnl": 0, "current_drawdown_percent": 0,
+        "equity_peak": total or 0, "consecutive_losses": 0,
+        "open_positions": open_n or 0, "open_orders": 0,
+        "risk_per_trade_percent": 0.5, "max_daily_loss_percent": 2.0,
+        "max_weekly_loss_percent": 5.0, "max_total_drawdown_percent": 8.0,
+        "max_leverage": 2, "max_capital_exposure_percent": 15.0, "news_pause": False,
+        "last_rejection_reason": "", "last_approved_trade": "",
+        "last_kill_switch_reason": "", "kill_switch_active": False,
+        "manual_restart_required": False,
+    }
+
+
+def _paper_weekly_from_balance(balance) -> dict:
+    total = (balance or {}).get("total") or 0
+    return {
+        "weekly_start_balance": total, "current_equity": total, "weekly_target_multiplier": 4.0,
+        "weekly_target_balance": total * 4, "required_weekly_profit": total * 3,
+        "current_weekly_profit": 0, "weekly_profit_percent": 0, "target_completion_percent": 0,
+        "remaining_profit_needed": total * 3, "remaining_trading_days": 7,
+        "required_daily_return_percent": 0, "target_status": "aspirational",
+        "risk_mode": "normal", "trading_allowed": True, "profit_locked": False,
+        "weekly_loss_limit_reached": False, "daily_loss_limit_reached": False,
+        "kill_switch_active": False,
+    }
+
+
 @app.get("/api/state")
 def state() -> JSONResponse:
     risk_status = _db_flag("risk_status")
@@ -210,9 +246,11 @@ def state() -> JSONResponse:
     mc = _market_context()
     profit = _freqtrade("profit")
     status = _freqtrade("status")
+    balance = _freqtrade("balance")
+    count = _freqtrade("count")
     kill = _db_flag("kill_switch")
 
-    if not any([risk_status, weekly, mc, profit, status]):
+    if not any([risk_status, weekly, mc, profit, status, balance]):
         return JSONResponse(_demo_state())
 
     positions = []
@@ -221,6 +259,14 @@ def state() -> JSONResponse:
             positions.append({"pair": t.get("pair"), "amount": t.get("amount"),
                               "open_rate": t.get("open_rate"),
                               "profit_pct": (t.get("profit_ratio") or 0) * 100})
+
+    # Paper-mode fallback: when the governor (executor) isn't producing status,
+    # show Freqtrade's dry-run wallet so the money/weekly panels aren't blank.
+    if not risk_status:
+        risk_status = _paper_status_from_freqtrade(balance, count, positions)
+    if not weekly:
+        weekly = _paper_weekly_from_balance(balance)
+
     live = _db_flag("live_enabled")
     return JSONResponse({
         "demo": False,
