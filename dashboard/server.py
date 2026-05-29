@@ -18,7 +18,7 @@ import os
 import time
 from pathlib import Path
 
-import base64
+import hashlib
 import secrets
 
 import requests
@@ -29,28 +29,79 @@ from fastapi.staticfiles import StaticFiles
 app = FastAPI(title="BingX Risk Dashboard")
 STATIC = Path(__file__).resolve().parent / "static"
 
-# Optional HTTP Basic Auth. Set DASHBOARD_PASSWORD to protect the dashboard
-# (REQUIRED when exposing it on a public server). If unset, no auth (local use).
-DASH_USER = os.environ.get("DASHBOARD_USER", "admin")
+# Password login. Set DASHBOARD_PASSWORD to protect the dashboard (REQUIRED when
+# exposing it on a public server / subdomain). If unset, no login (local use).
 DASH_PASS = os.environ.get("DASHBOARD_PASSWORD", "")
+COOKIE = "trade_session"
+
+
+def _expected_token() -> str:
+    secret = os.environ.get("DASHBOARD_COOKIE_SECRET") or DASH_PASS
+    return hashlib.sha256(("trade|v1|" + secret).encode()).hexdigest()
 
 
 @app.middleware("http")
-async def _basic_auth(request: Request, call_next):
-    if DASH_PASS:
-        hdr = request.headers.get("authorization", "")
-        ok = False
-        if hdr.startswith("Basic "):
-            try:
-                user, pw = base64.b64decode(hdr[6:]).decode().split(":", 1)
-                ok = (secrets.compare_digest(user, DASH_USER)
-                      and secrets.compare_digest(pw, DASH_PASS))
-            except Exception:  # noqa: BLE001
-                ok = False
-        if not ok:
-            return Response("Login required", status_code=401,
-                            headers={"WWW-Authenticate": 'Basic realm="Trading Bot"'})
-    return await call_next(request)
+async def _auth(request: Request, call_next):
+    if not DASH_PASS:                                   # no password set -> open (local use)
+        return await call_next(request)
+    path = request.url.path
+    if path == "/login" or path.startswith("/static"):
+        return await call_next(request)
+    tok = request.cookies.get(COOKIE, "")
+    if tok and secrets.compare_digest(tok, _expected_token()):
+        return await call_next(request)
+    if path.startswith("/api"):
+        return JSONResponse({"error": "login required"}, status_code=401)
+    return Response(status_code=302, headers={"Location": "/login"})
+
+
+LOGIN_HTML = """<!doctype html><html><head><meta charset=utf-8>
+<meta name=viewport content="width=device-width,initial-scale=1"><title>Trade — Login</title>
+<style>
+ body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;
+  font-family:system-ui,Segoe UI,Roboto,sans-serif;color:#eef1fa;
+  background:radial-gradient(900px 600px at 20% -10%,#1c2658,transparent 55%),linear-gradient(160deg,#0a0e1a,#121a38)}
+ .box{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:18px;
+  padding:34px 30px;width:320px;backdrop-filter:blur(14px);box-shadow:0 12px 40px rgba(0,0,0,.45);text-align:center}
+ h1{font-size:20px;margin:0 0 4px} p{color:#9aa4c2;font-size:13px;margin:0 0 20px}
+ input{width:100%;box-sizing:border-box;padding:12px 14px;border-radius:11px;border:1px solid rgba(255,255,255,.12);
+  background:rgba(255,255,255,.06);color:#fff;font-size:15px;margin-bottom:12px}
+ button{width:100%;padding:12px;border:none;border-radius:11px;font-weight:700;font-size:15px;color:#fff;cursor:pointer;
+  background:linear-gradient(135deg,#6aa3ff,#2bd49a)}
+ .err{color:#ff6171;font-size:13px;height:16px;margin-top:8px}
+</style></head><body>
+ <form class=box onsubmit="return go(event)">
+  <h1>My Trading Bot</h1><p>Enter the password to continue</p>
+  <input id=pw type=password placeholder="Password" autofocus autocomplete=current-password>
+  <button>Log in</button><div class=err id=err></div>
+ </form>
+ <script>
+ async function go(e){e.preventDefault();
+  const r=await fetch('/login',{method:'POST',headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({password:document.getElementById('pw').value})});
+  if(r.ok){location.href='/';} else {document.getElementById('err').textContent='Wrong password';}
+  return false;}
+ </script></body></html>"""
+
+
+@app.get("/login")
+def login_page() -> Response:
+    return Response(LOGIN_HTML, media_type="text/html")
+
+
+@app.post("/login")
+async def login(request: Request) -> JSONResponse:
+    try:
+        data = await request.json()
+    except Exception:  # noqa: BLE001
+        data = {}
+    pw = str((data or {}).get("password", ""))
+    if DASH_PASS and secrets.compare_digest(pw, DASH_PASS):
+        resp = JSONResponse({"ok": True})
+        resp.set_cookie(COOKIE, _expected_token(), httponly=True, samesite="lax",
+                        max_age=7 * 86400)
+        return resp
+    return JSONResponse({"ok": False}, status_code=401)
 
 FREQTRADE_API_URL = os.environ.get("FREQTRADE_API_URL", "http://freqtrade:8080").rstrip("/")
 FREQTRADE_AUTH = (os.environ.get("FREQTRADE_USERNAME", "freqtrader"),

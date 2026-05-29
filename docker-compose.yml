@@ -83,8 +83,29 @@ services:
         condition: service_healthy
     env_file:
       - .env
+    # On a public VPS with a domain, prefer the caddy proxy below (HTTPS) and
+    # firewall this port. Bound to localhost so it isn't exposed raw; reach it
+    # locally or via SSH tunnel. Change to "8050:8050" for plain local use.
     ports:
-      - "8050:8050"   # polished risk dashboard (read-only + STOP)
+      - "127.0.0.1:8050:8050"
+
+  # Public HTTPS entry point for a custom subdomain (e.g. trade.ohmycompany.ai).
+  # Start with:  docker compose --profile public up -d
+  caddy:
+    image: caddy:2
+    profiles: ["public"]
+    restart: unless-stopped
+    depends_on:
+      - dashboard
+    env_file:
+      - .env
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
 
   # ---------------------------------------------------------------------------
   # LIVE browser-execution path (REAL MONEY). Gated behind the "live-browser"
@@ -139,3 +160,5 @@ services:
 volumes:
   pgdata:
   browser_data:
+  caddy_data:
+  caddy_config:

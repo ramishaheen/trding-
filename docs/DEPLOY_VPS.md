@@ -33,46 +33,55 @@ cd trding-
 git checkout claude/modest-carson-pVcY9
 ```
 
-## 4. Add your settings
+## 4. Point your subdomain at the VPS
+In your DNS provider for **ohmycompany.ai** (Hostinger hPanel → Domains → DNS, or
+wherever the domain is managed), add an **A record**:
+- **Type:** A
+- **Name / Host:** `trade`   (this makes `trade.ohmycompany.ai`)
+- **Value / Points to:** your VPS IP address
+- **TTL:** default
+
+Wait a few minutes for it to take effect (you can check with `ping trade.ohmycompany.ai`).
+
+## 5. Add your settings
 ```bash
 cp .env.example .env
 nano .env
 ```
-Fill in (arrow-keys to move, then save with **Ctrl+O, Enter, Ctrl+X**):
+Fill in (save with **Ctrl+O, Enter, Ctrl+X**):
 ```
 FREQTRADE__EXCHANGE__KEY=your_fresh_bingx_key
 FREQTRADE__EXCHANGE__SECRET=your_fresh_bingx_secret
-DASHBOARD_USER=admin
 DASHBOARD_PASSWORD=pick-a-long-unique-password
+DASHBOARD_COOKIE_SECRET=any-long-random-string
+DASHBOARD_DOMAIN=trade.ohmycompany.ai
 ```
-The dashboard password is important — it's what stops strangers from reaching
-your TURN ON / STOP buttons.
+`DASHBOARD_PASSWORD` is the single password anyone must enter to log in — it's
+what stops strangers from reaching your TURN ON / STOP buttons.
 
-## 5. Start everything
+## 6. Start everything (with the public HTTPS proxy)
 ```bash
-docker compose up -d
+docker compose --profile public up -d
 ```
-First time downloads and builds (a few minutes). It keeps running after you log
-out. Check it's up: `docker compose ps`.
+First time downloads/builds (a few minutes) and Caddy automatically gets a free
+HTTPS certificate for your subdomain. Check it's up: `docker compose ps`.
 
-## 6. Lock down access (important)
-Only the dashboard (port **8050**) needs to be reachable; everything else is
-internal. In **hPanel → VPS → Firewall**, allow only:
-- **port 22** (SSH) — ideally from your IP only
-- **port 8050** (dashboard) — ideally from your IP only
+## 7. Lock down the firewall
+In **hPanel → VPS → Firewall**, allow only:
+- **22** (SSH)
+- **80** and **443** (the website / HTTPS)
 
-Block everything else. (FreqUI on 8080 is already bound to localhost and not
-public.)
+Block everything else. The dashboard itself is bound to localhost and only
+reachable through the HTTPS proxy — not as a raw port.
 
-## 7. Open the dashboard
-On any browser: **http://YOUR_VPS_IP:8050**
-Log in with the `DASHBOARD_USER` / `DASHBOARD_PASSWORD` you set. You'll see the
-live screen. It's in **paper mode** until you decide otherwise.
+## 8. Open it
+On any browser (phone or computer): **https://trade.ohmycompany.ai**
+You'll get the login page → type your password → the live dashboard. It's in
+**paper mode** until you turn real trading on.
 
-> More secure option (no public port at all): instead of opening 8050, run
-> `ssh -L 8050:localhost:8050 root@YOUR_VPS_IP` from your computer, then open
-> `http://localhost:8050`. The dashboard is then only reachable through your SSH
-> session.
+> No domain yet? You can still reach it securely without one: run
+> `ssh -L 8050:localhost:8050 root@YOUR_VPS_IP` from your computer and open
+> `http://localhost:8050`.
 
 ## Turning real trading ON / OFF
 See `docs/GO_LIVE.md`. In short: in `.env` set `LIVE_BROWSER_TRADING_ENABLED=on`,

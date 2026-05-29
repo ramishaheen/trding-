@@ -1,0 +1,9 @@
+# Reverse proxy for the dashboard subdomain with automatic HTTPS (Let's Encrypt).
+# {$DASHBOARD_DOMAIN} comes from .env (e.g. trade.ohmycompany.ai).
+# Caddy fetches and renews the TLS certificate automatically once the domain's
+# DNS points at this server and ports 80/443 are open.
+
+{$DASHBOARD_DOMAIN} {
+	encode gzip
+	reverse_proxy dashboard:8050
+}
