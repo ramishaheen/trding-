@@ -3,143 +3,171 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>BingX Risk Dashboard</title>
+<title>My Trading Bot</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <style>
   :root{
-    --bg0:#0a0e1a; --bg1:#111733; --card:rgba(255,255,255,.05); --card-bd:rgba(255,255,255,.10);
-    --txt:#e8ecf6; --muted:#8b95b3; --good:#27d18f; --bad:#ff5d6c; --warn:#ffb020; --accent:#6aa3ff;
-    --shadow:0 10px 40px rgba(0,0,0,.45);
+    --bg0:#0a0e1a; --bg1:#121a38; --card:rgba(255,255,255,.05); --card-bd:rgba(255,255,255,.10);
+    --txt:#eef1fa; --muted:#9aa4c2; --good:#2bd49a; --bad:#ff6171; --warn:#ffb43a; --accent:#6aa3ff;
+    --shadow:0 12px 40px rgba(0,0,0,.45);
   }
   *{box-sizing:border-box} html,body{margin:0;height:100%}
   body{
     font-family:'Inter',system-ui,-apple-system,Segoe UI,Roboto,sans-serif; color:var(--txt);
-    background:radial-gradient(1200px 700px at 12% -8%,#1b2350 0%,transparent 55%),
-               radial-gradient(900px 600px at 100% 0%,#22184a 0%,transparent 50%),
+    background:radial-gradient(1200px 700px at 12% -8%,#1c2658 0%,transparent 55%),
+               radial-gradient(900px 600px at 100% 0%,#241a52 0%,transparent 50%),
                linear-gradient(160deg,var(--bg0),var(--bg1));
-    background-attachment:fixed; min-height:100vh; padding:22px clamp(14px,4vw,42px);
+    background-attachment:fixed; min-height:100vh; padding:22px clamp(14px,4vw,46px); line-height:1.45;
   }
-  .topbar{display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:22px}
-  .brand{font-size:22px;font-weight:700;letter-spacing:.3px}
-  .brand small{display:block;font-weight:500;color:var(--muted);font-size:12px;letter-spacing:.5px}
+  .topbar{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:16px}
+  .brand{font-size:23px;font-weight:800;letter-spacing:.2px}
+  .brand small{display:block;font-weight:500;color:var(--muted);font-size:12.5px}
   .spacer{flex:1}
   .pill{padding:6px 12px;border-radius:999px;font-size:12px;font-weight:600;border:1px solid var(--card-bd);
         background:var(--card);backdrop-filter:blur(8px);white-space:nowrap}
-  .pill.good{color:var(--good);border-color:rgba(39,209,143,.4)}
-  .pill.bad{color:var(--bad);border-color:rgba(255,93,108,.4)}
-  .pill.warn{color:var(--warn);border-color:rgba(255,176,32,.4)}
+  .pill.good{color:var(--good);border-color:rgba(43,212,154,.4)}
+  .pill.bad{color:var(--bad);border-color:rgba(255,97,113,.4)}
+  .pill.warn{color:var(--warn);border-color:rgba(255,180,58,.4)}
   .pill.demo{color:#ffd36a;border-color:rgba(255,211,106,.5);background:rgba(255,211,106,.08)}
-  .stop{cursor:pointer;border:none;border-radius:14px;padding:12px 22px;font-weight:800;font-size:15px;
+  .stop{cursor:pointer;border:none;border-radius:13px;padding:12px 20px;font-weight:800;font-size:14px;
         color:#fff;background:linear-gradient(135deg,#ff4d5e,#c81e3a);box-shadow:0 8px 24px rgba(200,30,58,.45);
-        letter-spacing:.6px;transition:transform .08s ease, filter .2s}
+        letter-spacing:.4px;transition:transform .08s, filter .2s}
   .stop:hover{filter:brightness(1.08)} .stop:active{transform:translateY(1px)}
+
+  /* Plain-English summary banner */
+  .summary{display:flex;align-items:center;gap:14px;background:var(--card);border:1px solid var(--card-bd);
+           border-radius:16px;padding:14px 18px;margin-bottom:18px;backdrop-filter:blur(14px);box-shadow:var(--shadow)}
+  .summary .emoji{font-size:26px}
+  .summary .txt{font-size:16px;font-weight:600}
+  .summary .why{color:var(--muted);font-size:13px;margin-top:2px}
+
   .grid{display:grid;gap:16px;grid-template-columns:repeat(12,1fr)}
   .card{grid-column:span 4;background:var(--card);border:1px solid var(--card-bd);border-radius:18px;
-        padding:18px 18px 16px;backdrop-filter:blur(14px);box-shadow:var(--shadow)}
-  .card h3{margin:0 0 12px;font-size:12px;text-transform:uppercase;letter-spacing:1.4px;color:var(--muted);font-weight:700}
+        padding:18px;backdrop-filter:blur(14px);box-shadow:var(--shadow)}
+  .card h3{margin:0 0 12px;font-size:13px;letter-spacing:.2px;color:var(--txt);font-weight:700;display:flex;align-items:center;gap:7px}
   .span6{grid-column:span 6} .span8{grid-column:span 8} .span12{grid-column:span 12}
   .big{font-size:30px;font-weight:800;line-height:1.1}
   .sub{color:var(--muted);font-size:13px;margin-top:4px}
-  .row{display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid rgba(255,255,255,.05);font-size:14px}
+  .row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.05);font-size:14px}
   .row:last-child{border-bottom:none}
-  .row .k{color:var(--muted)} .row .v{font-weight:600}
+  .row .k{color:var(--muted);display:flex;align-items:center;gap:6px} .row .v{font-weight:700;text-align:right}
   .pos{color:var(--good)} .neg{color:var(--bad)}
-  .bar{height:12px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden;margin:10px 0 6px}
-  .bar>span{display:block;height:100%;border-radius:999px;background:linear-gradient(90deg,#6aa3ff,#27d18f)}
-  .gauge{height:8px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden;margin-top:8px}
-  .gauge>span{display:block;height:100%}
-  table{width:100%;border-collapse:collapse;font-size:13px}
-  th,td{text-align:left;padding:8px 6px;border-bottom:1px solid rgba(255,255,255,.06)}
-  th{color:var(--muted);font-weight:600;text-transform:uppercase;font-size:11px;letter-spacing:.6px}
+  .bar{height:14px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden;margin:12px 0 6px}
+  .bar>span{display:block;height:100%;border-radius:999px;background:linear-gradient(90deg,#6aa3ff,#2bd49a);transition:width .4s}
+  .gauge{height:9px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden;margin-top:8px}
+  .gauge>span{display:block;height:100%;transition:width .4s,background .4s}
+  table{width:100%;border-collapse:collapse;font-size:13.5px}
+  th,td{text-align:left;padding:9px 6px;border-bottom:1px solid rgba(255,255,255,.06)}
+  th{color:var(--muted);font-weight:600;font-size:11.5px;letter-spacing:.4px}
   .muted{color:var(--muted)} .tiny{font-size:12px}
   .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:7px;vertical-align:middle}
-  @media(max-width:900px){.card,.span6,.span8{grid-column:span 12}}
+
+  /* Hover help tooltip */
+  .help{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;
+        border:1px solid var(--card-bd);color:var(--muted);font-size:11px;font-weight:700;cursor:help;position:relative;flex:none}
+  .help:hover{color:var(--txt);border-color:var(--accent)}
+  .help::after{content:attr(data-tip);position:absolute;bottom:140%;left:50%;transform:translateX(-50%) translateY(6px);
+    width:230px;background:#0d1430;color:var(--txt);border:1px solid var(--card-bd);border-radius:10px;padding:9px 11px;
+    font-size:12px;font-weight:500;line-height:1.4;letter-spacing:.1px;text-align:left;opacity:0;pointer-events:none;
+    transition:opacity .15s,transform .15s;box-shadow:var(--shadow);z-index:20}
+  .help:hover::after{opacity:1;transform:translateX(-50%) translateY(0)}
+  .help.l::after{left:auto;right:-4px;transform:translateY(6px)} .help.l:hover::after{transform:translateY(0)}
+  @media(max-width:900px){.card,.span6,.span8{grid-column:span 12}.help::after{width:180px}}
 </style>
 </head>
 <body>
   <div class="topbar">
-    <div class="brand">BingX Risk Dashboard <small>capital protection first · risk governor + weekly target</small></div>
+    <div class="brand">My Trading Bot <small>built to protect your money first</small></div>
     <div class="spacer"></div>
-    <span id="demoPill" class="pill demo" style="display:none">DEMO DATA</span>
+    <span id="demoPill" class="pill demo" style="display:none">Sample data</span>
     <span id="modePill" class="pill">—</span>
     <span id="connPill" class="pill warn"><span class="dot" style="background:var(--warn)"></span>connecting…</span>
-    <button class="stop" onclick="emergencyStop()">■ STOP</button>
+    <button class="stop" onclick="emergencyStop()">■ STOP NOW</button>
+  </div>
+
+  <!-- Plain-English "what's happening" banner -->
+  <div class="summary">
+    <div class="emoji" id="sumEmoji">⏳</div>
+    <div><div class="txt" id="sumText">Loading…</div><div class="why" id="sumWhy"></div></div>
   </div>
 
   <div class="grid">
-    <!-- Account / risk headline -->
+    <!-- Your money -->
     <div class="card">
-      <h3>Account</h3>
+      <h3>Your money <span class="help" data-tip="What your account is worth right now, in US dollars.">?</span></h3>
       <div class="big" id="balance">—</div>
-      <div class="sub">equity peak <span id="peak">—</span> · mode <b id="riskMode">—</b></div>
-      <div class="row"><span class="k">Open positions</span><span class="v" id="openPos">—</span></div>
-      <div class="row"><span class="k">Consecutive losses</span><span class="v" id="consLoss">—</span></div>
-      <div class="row"><span class="k">Trading enabled</span><span class="v" id="tradingEnabled">—</span></div>
+      <div class="sub">best so far <span id="peak">—</span></div>
+      <div class="row"><span class="k">Safety status <span class="help" data-tip="A simple light: All good = trading normally. Being careful / Extra careful = smaller, pickier trades. Paused or Stopped = no new trades.">?</span></span><span class="v" id="riskMode">—</span></div>
+      <div class="row"><span class="k">Open trades <span class="help" data-tip="How many trades are live right now. The bot keeps this small on purpose.">?</span></span><span class="v" id="openPos">—</span></div>
+      <div class="row"><span class="k">Losses in a row <span class="help" data-tip="If this reaches 3, the bot takes a 24-hour break to avoid chasing losses.">?</span></span><span class="v" id="consLoss">—</span></div>
+      <div class="row"><span class="k">Allowed to trade <span class="help" data-tip="Whether the bot is currently permitted to open new trades.">?</span></span><span class="v" id="tradingEnabled">—</span></div>
     </div>
 
-    <!-- Daily / drawdown gauges -->
+    <!-- Safety limits -->
     <div class="card">
-      <h3>Loss limits</h3>
-      <div class="row"><span class="k">Daily P&L</span><span class="v" id="dailyPnl">—</span></div>
+      <h3>Safety limits <span class="help" data-tip="The bot automatically stops trading before losses get serious. These bars show how close you are to those automatic stops.">?</span></h3>
+      <div class="row"><span class="k">Today’s result <span class="help" data-tip="Money made or lost so far today. If today's loss hits the limit, the bot stops until tomorrow.">?</span></span><span class="v" id="dailyPnl">—</span></div>
       <div class="gauge"><span id="dailyGauge"></span></div>
-      <div class="tiny muted" id="dailyCap">cap —</div>
-      <div class="row" style="margin-top:10px"><span class="k">Drawdown</span><span class="v" id="dd">—</span></div>
+      <div class="tiny muted" id="dailyCap">—</div>
+      <div class="row" style="margin-top:12px"><span class="k">Drop from best <span class="help" data-tip="How far your account has fallen from its highest point. If this reaches the limit, everything stops and you must restart it by hand.">?</span></span><span class="v" id="dd">—</span></div>
       <div class="gauge"><span id="ddGauge"></span></div>
-      <div class="tiny muted" id="ddCap">cap —</div>
+      <div class="tiny muted" id="ddCap">—</div>
     </div>
 
-    <!-- Market context -->
+    <!-- Market read -->
     <div class="card">
-      <h3>LLM market context</h3>
+      <h3>Market read (AI) <span class="help" data-tip="An AI assistant's quick take on the market. It can only make the bot more cautious — it can never force a trade.">?</span></h3>
       <div class="big" id="regime">—</div>
-      <div class="sub"><span id="riskState">—</span> · confidence <span id="conf">—</span> · sentiment <span id="senti">—</span></div>
-      <div class="row"><span class="k">News pause</span><span class="v" id="newsPause">—</span></div>
-      <div class="tiny muted" id="rationale" style="margin-top:8px">—</div>
+      <div class="sub">mood read from price & news</div>
+      <div class="row"><span class="k">Leaning <span class="help" data-tip="Whether conditions look friendly (risk on), unfriendly (risk off), or unclear (neutral) for buying.">?</span></span><span class="v" id="riskState">—</span></div>
+      <div class="row"><span class="k">How sure <span class="help" data-tip="How confident the AI is in its read, from 0 to 100%.">?</span></span><span class="v" id="conf">—</span></div>
+      <div class="row"><span class="k">News tone <span class="help" data-tip="Overall mood of recent news: negative (−1) to positive (+1).">?</span></span><span class="v" id="senti">—</span></div>
+      <div class="row"><span class="k">Paused for news <span class="help" data-tip="During big news events the bot pauses new trades but still protects what's open.">?</span></span><span class="v" id="newsPause">—</span></div>
+      <div class="tiny muted" id="rationale" style="margin-top:8px"></div>
     </div>
 
-    <!-- Weekly target -->
+    <!-- Weekly goal -->
     <div class="card span8">
-      <h3>Weekly target (aspirational — never forced)</h3>
-      <div style="display:flex;justify-content:space-between;align-items:flex-end">
-        <div><div class="big" id="wtCompletion">—</div><div class="sub">of weekly target reached</div></div>
+      <h3>Weekly goal <span class="help" data-tip="A hopeful target, not a promise. The bot will NEVER take bigger risks to chase it. Safety always wins.">?</span></h3>
+      <div style="display:flex;justify-content:space-between;align-items:flex-end;gap:14px;flex-wrap:wrap">
+        <div><div class="big" id="wtCompletion">—</div><div class="sub">of this week’s goal reached</div></div>
         <div style="text-align:right">
-          <div class="tiny muted">start → current → target</div>
+          <div class="tiny muted">start → now → goal</div>
           <div style="font-weight:700"><span id="wtStart">—</span> → <span id="wtCur">—</span> → <span id="wtTarget">—</span></div>
         </div>
       </div>
       <div class="bar"><span id="wtBar" style="width:0%"></span></div>
-      <div class="row"><span class="k">Status</span><span class="v" id="wtStatus">—</span></div>
-      <div class="row"><span class="k">Required daily return</span><span class="v" id="wtRdr">—</span></div>
-      <div class="row"><span class="k">Remaining profit / days</span><span class="v" id="wtRemain">—</span></div>
-      <div class="row"><span class="k">Profit locked</span><span class="v" id="wtLock">—</span></div>
+      <div class="row"><span class="k">How it’s going <span class="help" data-tip="A plain status. 'Out of reach safely' means the goal isn't realistic without taking unsafe risks — so the bot won't try. That's by design.">?</span></span><span class="v" id="wtStatus">—</span></div>
+      <div class="row"><span class="k">Still needed <span class="help" data-tip="How much more profit, and how many days are left this week.">?</span></span><span class="v" id="wtRemain">—</span></div>
+      <div class="row"><span class="k">Profit locked in <span class="help" data-tip="As you gain, the bot lowers risk to protect those gains. When the goal is hit it stops and keeps the profit.">?</span></span><span class="v" id="wtLock">—</span></div>
     </div>
 
-    <!-- Equity curve -->
+    <!-- Balance over time -->
     <div class="card span4">
-      <h3>Equity</h3>
-      <canvas id="equityChart" height="150"></canvas>
+      <h3>Balance over time <span class="help l" data-tip="Your account value across recent updates.">?</span></h3>
+      <canvas id="equityChart" height="170"></canvas>
     </div>
 
-    <!-- Positions -->
+    <!-- Open trades -->
     <div class="card span6">
-      <h3>Open positions</h3>
-      <table><thead><tr><th>Pair</th><th>Amount</th><th>Open</th><th>P&L</th></tr></thead>
+      <h3>Open trades now <span class="help" data-tip="Trades the bot currently holds, and how each is doing.">?</span></h3>
+      <table><thead><tr><th>Coin</th><th>Size</th><th>Bought at</th><th>Now</th></tr></thead>
       <tbody id="posBody"><tr><td colspan="4" class="muted">—</td></tr></tbody></table>
     </div>
 
     <!-- Recent trades -->
     <div class="card span6">
-      <h3>Recent trades</h3>
-      <table><thead><tr><th>Pair</th><th>P&L</th><th>Status</th></tr></thead>
+      <h3>Recent trades <span class="help" data-tip="The latest trades and whether each made or lost money.">?</span></h3>
+      <table><thead><tr><th>Coin</th><th>Result</th><th>Status</th></tr></thead>
       <tbody id="tradeBody"><tr><td colspan="3" class="muted">—</td></tr></tbody></table>
     </div>
 
-    <!-- Last actions -->
+    <!-- Bot decisions -->
     <div class="card span12">
-      <h3>Governor activity</h3>
-      <div class="row"><span class="k">Last approved trade</span><span class="v" id="lastApproved">—</span></div>
-      <div class="row"><span class="k">Last rejection reason</span><span class="v" id="lastReject">—</span></div>
-      <div class="row"><span class="k">Kill switch</span><span class="v" id="killState">—</span></div>
+      <h3>What the bot decided <span class="help" data-tip="A quick log of the safety system's latest choices.">?</span></h3>
+      <div class="row"><span class="k">Last trade allowed <span class="help" data-tip="The most recent trade the safety system approved.">?</span></span><span class="v" id="lastApproved">—</span></div>
+      <div class="row"><span class="k">Last trade blocked because <span class="help" data-tip="Why the safety system said no to the most recent attempt. Blocking a risky trade is a good thing.">?</span></span><span class="v" id="lastReject">—</span></div>
+      <div class="row"><span class="k">Emergency stop <span class="help" data-tip="If active, all trading is halted and someone must restart the bot by hand.">?</span></span><span class="v" id="killState">—</span></div>
       <div class="tiny muted" id="updated" style="margin-top:10px">—</div>
     </div>
   </div>
@@ -149,136 +177,143 @@ const fmt = (n,d=2)=> (n===null||n===undefined||isNaN(n))?'—':Number(n).toLoca
 const pct = (n)=> (n===null||n===undefined||isNaN(n))?'—':(Number(n)>=0?'+':'')+Number(n).toFixed(2)+'%';
 let chart;
 
-// Embedded sample so the page is useful even opened as a standalone file.
+// Friendly translations of technical values.
+const MODE_TEXT = {normal:'All good',caution:'Being careful',defensive:'Extra careful',
+  locked:'Trading paused',killed:'Stopped',cooldown:'Taking a break',news_pause:'Paused for news',
+  reconciliation_error:'Checking accounts'};
+const STATUS_TEXT = {aspirational:'Just getting started',on_track:'On track',behind_target:'Behind, staying safe',
+  unrealistic_under_current_risk_limits:'Out of reach safely',completed:'Goal reached 🎉',
+  locked_due_to_loss:'Paused (loss limit)',locked_due_to_drawdown:'Stopped (big drop)',killed:'Stopped'};
+
 const DEMO = {demo:true,kill_switch_active:false,
-  risk_status:{trading_enabled:true,risk_mode:"normal",trading_mode:"REAL_TRADING_STRICT",
-    account_balance:100,available_margin:100,daily_pnl:1.2,weekly_pnl:6.5,current_drawdown_percent:1.1,
-    equity_peak:107,consecutive_losses:0,open_positions:1,open_orders:0,risk_per_trade_percent:0.5,
-    max_daily_loss_percent:2,max_weekly_loss_percent:5,max_total_drawdown_percent:8,max_leverage:2,
-    max_capital_exposure_percent:15,news_pause:false,last_rejection_reason:"rr 1.20<1.5",
-    last_approved_trade:"BTC/USDT long qty=0.00120000",kill_switch_active:false,manual_restart_required:false},
-  weekly_target:{weekly_start_balance:100,current_equity:106.5,weekly_target_multiplier:4,
-    weekly_target_balance:400,required_weekly_profit:300,current_weekly_profit:6.5,weekly_profit_percent:6.5,
-    target_completion_percent:2.17,remaining_profit_needed:293.5,remaining_trading_days:5,
-    required_daily_return_percent:38,target_status:"unrealistic_under_current_risk_limits",
-    risk_mode:"normal",trading_allowed:true,profit_locked:false},
+  risk_status:{trading_enabled:true,risk_mode:"normal",trading_mode:"Real money",account_balance:100,
+    available_margin:100,daily_pnl:1.2,weekly_pnl:6.5,current_drawdown_percent:1.1,equity_peak:107,
+    consecutive_losses:0,open_positions:1,open_orders:0,risk_per_trade_percent:0.5,max_daily_loss_percent:2,
+    max_weekly_loss_percent:5,max_total_drawdown_percent:8,max_leverage:2,max_capital_exposure_percent:15,
+    news_pause:false,last_rejection_reason:"reward too small vs risk",
+    last_approved_trade:"Bitcoin buy",kill_switch_active:false,manual_restart_required:false},
+  weekly_target:{weekly_start_balance:100,current_equity:106.5,weekly_target_multiplier:4,weekly_target_balance:400,
+    required_weekly_profit:300,current_weekly_profit:6.5,weekly_profit_percent:6.5,target_completion_percent:2.17,
+    remaining_profit_needed:293.5,remaining_trading_days:5,required_daily_return_percent:38,
+    target_status:"unrealistic_under_current_risk_limits",risk_mode:"normal",trading_allowed:true,profit_locked:false},
   market_context:{regime:"trending_up",risk_state:"risk_on",confidence:0.62,sentiment:0.3,pause_trading:false,
-    rationale:"Demo: steady uptrend, supportive macro."},
+    rationale:"Steady uptrend, calm news."},
   positions:[{pair:"BTC/USDT",amount:0.0012,open_rate:61000,profit_pct:1.4}],
   trades:[{pair:"BTC/USDT",profit_pct:1.4,is_open:true},{pair:"ETH/USDT",profit_pct:2.1,is_open:false},
     {pair:"SOL/USDT",profit_pct:-0.6,is_open:false}],
   equity_curve:[100,100.4,99.8,101.2,102.6,104.1,106.5],ts:Date.now()/1000};
 
 async function fetchState(){
-  try{
-    const r = await fetch('/api/state',{cache:'no-store'});
-    if(!r.ok) throw new Error(r.status);
-    return await r.json();
-  }catch(e){ return DEMO; }   // standalone-file fallback
+  try{ const r=await fetch('/api/state',{cache:'no-store'}); if(!r.ok) throw 0; return await r.json(); }
+  catch(e){ return DEMO; }
 }
 
-function gauge(el, used, cap, invert=false){
-  const ratio = cap>0 ? Math.min(1, Math.abs(used)/cap) : 0;
-  const c = ratio<0.5 ? 'var(--good)' : ratio<0.85 ? 'var(--warn)' : 'var(--bad)';
-  el.style.width = (ratio*100).toFixed(0)+'%';
-  el.style.background = c;
+function gauge(el,used,cap){
+  const ratio=cap>0?Math.min(1,Math.abs(used)/cap):0;
+  el.style.width=(ratio*100).toFixed(0)+'%';
+  el.style.background=ratio<0.5?'var(--good)':ratio<0.85?'var(--warn)':'var(--bad)';
+}
+
+function summary(s){
+  const rs=s.risk_status||{}, wt=s.weekly_target||{}, mc=s.market_context||{};
+  let emoji='✅', text='The bot is on and watching for safe trades.', why='';
+  if(s.kill_switch_active){ emoji='🛑'; text='Stopped for safety.'; why='You hit a safety limit. It won’t trade again until you restart it by hand.'; }
+  else if(!rs.trading_enabled || rs.risk_mode==='locked'){ emoji='⏸'; text='Trading is paused.'; why='Protecting your money — waiting for safer conditions.'; }
+  else if(mc.pause_trading){ emoji='📰'; text='Paused for big news.'; why='Avoiding sudden moves around major news. Open trades are still protected.'; }
+  else if(rs.risk_mode==='cooldown'){ emoji='☕'; text='Taking a short break.'; why='Cooling off after a recent trade before looking again.'; }
+  else if(rs.risk_mode==='caution'||rs.risk_mode==='defensive'){ emoji='🧐'; text='On, but extra careful.'; why='Using smaller sizes and only the best setups right now.'; }
+  else if(wt.profit_locked){ emoji='🔒'; text='Goal reached — profit locked in.'; why='The bot stopped to keep this week’s gains safe.'; }
+  document.getElementById('sumEmoji').textContent=emoji;
+  document.getElementById('sumText').textContent=text;
+  document.getElementById('sumWhy').textContent=why;
 }
 
 function render(s){
-  const conn = document.getElementById('connPill');
-  if(!s){ conn.className='pill bad'; conn.innerHTML='<span class="dot" style="background:var(--bad)"></span>offline'; return; }
-  conn.className='pill good'; conn.innerHTML='<span class="dot" style="background:var(--good)"></span>live';
-  document.getElementById('demoPill').style.display = s.demo ? 'inline-block':'none';
+  const conn=document.getElementById('connPill');
+  conn.className='pill good'; conn.innerHTML='<span class="dot" style="background:var(--good)"></span>up to date';
+  document.getElementById('demoPill').style.display=s.demo?'inline-block':'none';
+  const rs=s.risk_status||{}, wt=s.weekly_target||{}, mc=s.market_context||{};
 
-  const rs = s.risk_status||{}, wt = s.weekly_target||{}, mc = s.market_context||{};
-  document.getElementById('modePill').textContent = (rs.trading_mode||'—');
+  summary(s);
+  document.getElementById('modePill').textContent = s.demo ? 'Practice / sample' : (rs.trading_mode==='REAL_TRADING_STRICT'?'Real money':(rs.trading_mode||'—'));
 
-  // Account
-  document.getElementById('balance').textContent = '$'+fmt(rs.account_balance);
-  document.getElementById('peak').textContent = '$'+fmt(rs.equity_peak);
-  const rm = (rs.risk_mode||'—');
-  const rmEl = document.getElementById('riskMode'); rmEl.textContent = rm;
-  rmEl.className = rm==='normal'?'pos':(['killed','locked','reconciliation_error'].includes(rm)?'neg':'');
-  document.getElementById('openPos').textContent = fmt(rs.open_positions,0);
-  document.getElementById('consLoss').textContent = fmt(rs.consecutive_losses,0);
-  const te = document.getElementById('tradingEnabled');
-  te.textContent = rs.trading_enabled? 'yes':'no'; te.className = 'v '+(rs.trading_enabled?'pos':'neg');
+  document.getElementById('balance').textContent='$'+fmt(rs.account_balance);
+  document.getElementById('peak').textContent='$'+fmt(rs.equity_peak);
+  const rmEl=document.getElementById('riskMode'); const rm=rs.risk_mode||'—';
+  rmEl.textContent=MODE_TEXT[rm]||rm;
+  rmEl.className='v '+(rm==='normal'?'pos':(['killed','locked','reconciliation_error'].includes(rm)?'neg':'warn'));
+  document.getElementById('openPos').textContent=fmt(rs.open_positions,0);
+  document.getElementById('consLoss').textContent=fmt(rs.consecutive_losses,0);
+  const te=document.getElementById('tradingEnabled'); te.textContent=rs.trading_enabled?'Yes':'No';
+  te.className='v '+(rs.trading_enabled?'pos':'neg');
 
-  // Loss limits
-  const dp = document.getElementById('dailyPnl'); dp.textContent = '$'+fmt(rs.daily_pnl); dp.className='v '+((rs.daily_pnl||0)>=0?'pos':'neg');
-  const dailyCap = (rs.account_balance||0)*(rs.max_daily_loss_percent||0)/100;
-  gauge(document.getElementById('dailyGauge'), Math.min(0,rs.daily_pnl||0), dailyCap);
-  document.getElementById('dailyCap').textContent = 'loss cap $'+fmt(dailyCap)+' ('+fmt(rs.max_daily_loss_percent)+'%)';
-  document.getElementById('dd').textContent = fmt(rs.current_drawdown_percent)+'%';
-  gauge(document.getElementById('ddGauge'), rs.current_drawdown_percent||0, rs.max_total_drawdown_percent||8);
-  document.getElementById('ddCap').textContent = 'cap '+fmt(rs.max_total_drawdown_percent)+'%';
+  const dp=document.getElementById('dailyPnl'); dp.textContent='$'+fmt(rs.daily_pnl); dp.className='v '+((rs.daily_pnl||0)>=0?'pos':'neg');
+  const dailyCap=(rs.account_balance||0)*(rs.max_daily_loss_percent||0)/100;
+  gauge(document.getElementById('dailyGauge'),Math.min(0,rs.daily_pnl||0),dailyCap);
+  document.getElementById('dailyCap').textContent='bot stops for the day if today’s loss reaches $'+fmt(dailyCap);
+  document.getElementById('dd').textContent=fmt(rs.current_drawdown_percent)+'%';
+  gauge(document.getElementById('ddGauge'),rs.current_drawdown_percent||0,rs.max_total_drawdown_percent||8);
+  document.getElementById('ddCap').textContent='everything stops if this reaches '+fmt(rs.max_total_drawdown_percent)+'%';
 
-  // Market context
-  document.getElementById('regime').textContent = (mc.regime||'—').replace(/_/g,' ');
-  document.getElementById('riskState').textContent = mc.risk_state||'—';
-  document.getElementById('conf').textContent = mc.confidence!=null?fmt(mc.confidence*100,0)+'%':'—';
-  document.getElementById('senti').textContent = mc.sentiment!=null?fmt(mc.sentiment,2):'—';
-  const np=document.getElementById('newsPause'); np.textContent = mc.pause_trading?'ACTIVE':'off'; np.className='v '+(mc.pause_trading?'neg':'pos');
-  document.getElementById('rationale').textContent = mc.rationale||'';
+  document.getElementById('regime').textContent=(mc.regime||'—').replace(/_/g,' ');
+  document.getElementById('riskState').textContent=({risk_on:'Friendly',risk_off:'Unfriendly',neutral:'Unclear'})[mc.risk_state]||'—';
+  document.getElementById('conf').textContent=mc.confidence!=null?fmt(mc.confidence*100,0)+'%':'—';
+  document.getElementById('senti').textContent=mc.sentiment!=null?(mc.sentiment>0.15?'Positive':mc.sentiment<-0.15?'Negative':'Neutral'):'—';
+  const np=document.getElementById('newsPause'); np.textContent=mc.pause_trading?'Yes':'No'; np.className='v '+(mc.pause_trading?'neg':'pos');
+  document.getElementById('rationale').textContent=mc.rationale||'';
 
-  // Weekly target
-  const comp = wt.target_completion_percent||0;
-  document.getElementById('wtCompletion').textContent = comp.toFixed(2)+'%';
-  document.getElementById('wtBar').style.width = Math.min(100,Math.max(0,comp)).toFixed(1)+'%';
-  document.getElementById('wtStart').textContent = '$'+fmt(wt.weekly_start_balance);
-  document.getElementById('wtCur').textContent = '$'+fmt(wt.current_equity);
-  document.getElementById('wtTarget').textContent = '$'+fmt(wt.weekly_target_balance);
-  const st = (wt.target_status||'—');
-  const stEl=document.getElementById('wtStatus'); stEl.textContent = st.replace(/_/g,' ');
-  stEl.className='v '+(st==='completed'||st==='on_track'?'pos':(st.includes('locked')||st==='killed'?'neg':'warn'));
-  document.getElementById('wtRdr').textContent = fmt(wt.required_daily_return_percent)+'% / day';
-  document.getElementById('wtRemain').textContent = '$'+fmt(wt.remaining_profit_needed)+' · '+fmt(wt.remaining_trading_days,0)+' days';
-  const lk=document.getElementById('wtLock'); lk.textContent = wt.profit_locked?'YES':'no'; lk.className='v '+(wt.profit_locked?'warn':'');
+  const comp=wt.target_completion_percent||0;
+  document.getElementById('wtCompletion').textContent=comp.toFixed(1)+'%';
+  document.getElementById('wtBar').style.width=Math.min(100,Math.max(0,comp)).toFixed(1)+'%';
+  document.getElementById('wtStart').textContent='$'+fmt(wt.weekly_start_balance);
+  document.getElementById('wtCur').textContent='$'+fmt(wt.current_equity);
+  document.getElementById('wtTarget').textContent='$'+fmt(wt.weekly_target_balance);
+  const st=wt.target_status||'—'; const stEl=document.getElementById('wtStatus');
+  stEl.textContent=STATUS_TEXT[st]||st.replace(/_/g,' ');
+  stEl.className='v '+(['completed','on_track'].includes(st)?'pos':(st.includes('locked')||st==='killed'?'neg':'warn'));
+  document.getElementById('wtRemain').textContent='$'+fmt(wt.remaining_profit_needed)+' · '+fmt(wt.remaining_trading_days,0)+' days left';
+  const lk=document.getElementById('wtLock'); lk.textContent=wt.profit_locked?'Yes':'Not yet'; lk.className='v '+(wt.profit_locked?'warn':'');
 
-  // Equity chart
-  const eq = s.equity_curve||[];
-  if(eq.length){ drawChart(eq); }
+  if((s.equity_curve||[]).length) drawChart(s.equity_curve);
 
-  // Positions / trades
   const pb=document.getElementById('posBody');
-  pb.innerHTML = (s.positions&&s.positions.length)? s.positions.map(p=>
-    `<tr><td>${p.pair||'—'}</td><td>${fmt(p.amount,6)}</td><td>${fmt(p.open_rate)}</td>
+  pb.innerHTML=(s.positions&&s.positions.length)?s.positions.map(p=>
+    `<tr><td>${(p.pair||'—').replace('/USDT','')}</td><td>${fmt(p.amount,6)}</td><td>$${fmt(p.open_rate)}</td>
      <td class="${(p.profit_pct||0)>=0?'pos':'neg'}">${pct(p.profit_pct)}</td></tr>`).join('')
-    : '<tr><td colspan="4" class="muted">no open positions</td></tr>';
+    :'<tr><td colspan="4" class="muted">No open trades right now</td></tr>';
   const tb=document.getElementById('tradeBody');
-  tb.innerHTML = (s.trades&&s.trades.length)? s.trades.map(t=>
-    `<tr><td>${t.pair||'—'}</td><td class="${(t.profit_pct||0)>=0?'pos':'neg'}">${pct(t.profit_pct)}</td>
+  tb.innerHTML=(s.trades&&s.trades.length)?s.trades.map(t=>
+    `<tr><td>${(t.pair||'—').replace('/USDT','')}</td><td class="${(t.profit_pct||0)>=0?'pos':'neg'}">${pct(t.profit_pct)}</td>
      <td class="muted">${t.is_open?'open':'closed'}</td></tr>`).join('')
-    : '<tr><td colspan="3" class="muted">no trades yet</td></tr>';
+    :'<tr><td colspan="3" class="muted">No trades yet</td></tr>';
 
-  // Governor activity
-  document.getElementById('lastApproved').textContent = rs.last_approved_trade||'—';
-  document.getElementById('lastReject').textContent = rs.last_rejection_reason||'—';
+  document.getElementById('lastApproved').textContent=rs.last_approved_trade||'—';
+  document.getElementById('lastReject').textContent=rs.last_rejection_reason||'—';
   const ks=document.getElementById('killState');
-  ks.textContent = s.kill_switch_active?'ACTIVE — manual restart required':'clear';
+  ks.textContent=s.kill_switch_active?'ON — restart needed':'Off (all clear)';
   ks.className='v '+(s.kill_switch_active?'neg':'pos');
-  document.getElementById('updated').textContent = 'updated '+new Date((s.ts||Date.now()/1000)*1000).toLocaleTimeString();
+  document.getElementById('updated').textContent='updated '+new Date((s.ts||Date.now()/1000)*1000).toLocaleTimeString();
 }
 
 function drawChart(data){
   const ctx=document.getElementById('equityChart');
   const labels=data.map((_,i)=>i);
-  if(chart){ chart.data.labels=labels; chart.data.datasets[0].data=data; chart.update('none'); return; }
-  chart=new Chart(ctx,{type:'line',data:{labels,datasets:[{data,borderColor:'#27d18f',
-    backgroundColor:'rgba(39,209,143,.12)',fill:true,tension:.35,pointRadius:0,borderWidth:2}]},
+  if(chart){chart.data.labels=labels;chart.data.datasets[0].data=data;chart.update('none');return;}
+  chart=new Chart(ctx,{type:'line',data:{labels,datasets:[{data,borderColor:'#2bd49a',
+    backgroundColor:'rgba(43,212,154,.12)',fill:true,tension:.35,pointRadius:0,borderWidth:2}]},
     options:{plugins:{legend:{display:false}},scales:{x:{display:false},
-      y:{ticks:{color:'#8b95b3'},grid:{color:'rgba(255,255,255,.05)'}}}}});
+      y:{ticks:{color:'#9aa4c2'},grid:{color:'rgba(255,255,255,.05)'}}}}});
 }
 
 async function emergencyStop(){
-  if(!confirm('Trip the kill switch and STOP all trading now?')) return;
-  try{ await fetch('/api/stop',{method:'POST'}); alert('Kill switch tripped. New trading halted.'); }
-  catch(e){ alert('Stop request failed: '+e); }
+  if(!confirm('Stop all trading right now?\n\nThe bot will cancel new trades immediately. You’ll need to restart it by hand afterwards.')) return;
+  try{ await fetch('/api/stop',{method:'POST'}); alert('Done — all trading is stopped.'); }
+  catch(e){ alert('Could not reach the bot to stop it: '+e); }
   tick();
 }
 
 async function tick(){ render(await fetchState()); }
-tick(); setInterval(tick, 5000);
+tick(); setInterval(tick,5000);
 </script>
 </body>
 </html>
