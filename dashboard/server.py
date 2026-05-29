@@ -18,13 +18,39 @@ import os
 import time
 from pathlib import Path
 
+import base64
+import secrets
+
 import requests
-from fastapi import FastAPI
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi import FastAPI, Request
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 app = FastAPI(title="BingX Risk Dashboard")
 STATIC = Path(__file__).resolve().parent / "static"
+
+# Optional HTTP Basic Auth. Set DASHBOARD_PASSWORD to protect the dashboard
+# (REQUIRED when exposing it on a public server). If unset, no auth (local use).
+DASH_USER = os.environ.get("DASHBOARD_USER", "admin")
+DASH_PASS = os.environ.get("DASHBOARD_PASSWORD", "")
+
+
+@app.middleware("http")
+async def _basic_auth(request: Request, call_next):
+    if DASH_PASS:
+        hdr = request.headers.get("authorization", "")
+        ok = False
+        if hdr.startswith("Basic "):
+            try:
+                user, pw = base64.b64decode(hdr[6:]).decode().split(":", 1)
+                ok = (secrets.compare_digest(user, DASH_USER)
+                      and secrets.compare_digest(pw, DASH_PASS))
+            except Exception:  # noqa: BLE001
+                ok = False
+        if not ok:
+            return Response("Login required", status_code=401,
+                            headers={"WWW-Authenticate": 'Basic realm="Trading Bot"'})
+    return await call_next(request)
 
 FREQTRADE_API_URL = os.environ.get("FREQTRADE_API_URL", "http://freqtrade:8080").rstrip("/")
 FREQTRADE_AUTH = (os.environ.get("FREQTRADE_USERNAME", "freqtrader"),

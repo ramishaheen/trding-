@@ -39,7 +39,8 @@ services:
     volumes:
       - ./user_data:/freqtrade/user_data
     ports:
-      - "8080:8080"   # FreqUI + REST API
+      - "127.0.0.1:8080:8080"   # FreqUI + REST API — bound to localhost only
+                                # (reach it via SSH tunnel; not exposed publicly)
     env_file:
       - .env
     command: >
