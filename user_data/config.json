@@ -1,0 +1,140 @@
+{
+    "$schema": "https://schema.freqtrade.io/schema.json",
+    "_comment": "BingX spot, DRY-RUN by default. Secrets are injected via FREQTRADE__* env vars (see .env.example). DO NOT set dry_run to false here; going live is a manual, documented Phase-4 step.",
+
+    "max_open_trades": 3,
+    "stake_currency": "USDT",
+    "stake_amount": 100,
+    "tradable_balance_ratio": 0.99,
+    "fiat_display_currency": "USD",
+    "timeframe": "1h",
+
+    "dry_run": true,
+    "dry_run_wallet": 1000,
+    "cancel_open_orders_on_exit": true,
+
+    "trading_mode": "spot",
+    "margin_mode": "",
+
+    "unfilledtimeout": {
+        "entry": 10,
+        "exit": 10,
+        "exit_timeout_count": 0,
+        "unit": "minutes"
+    },
+
+    "entry_pricing": {
+        "price_side": "same",
+        "use_order_book": true,
+        "order_book_top": 1,
+        "price_last_balance": 0.0,
+        "check_depth_of_market": {
+            "enabled": false,
+            "bids_to_ask_delta": 1
+        }
+    },
+    "exit_pricing": {
+        "price_side": "same",
+        "use_order_book": true,
+        "order_book_top": 1
+    },
+
+    "exchange": {
+        "name": "bingx",
+        "key": "",
+        "secret": "",
+        "ccxt_config": {},
+        "ccxt_async_config": {},
+        "pair_whitelist": [
+            "BTC/USDT",
+            "ETH/USDT",
+            "SOL/USDT"
+        ],
+        "pair_blacklist": [
+            ".*(UP|DOWN|BULL|BEAR)/.*"
+        ]
+    },
+
+    "order_types": {
+        "entry": "limit",
+        "exit": "limit",
+        "stoploss": "market",
+        "stoploss_on_exchange": true,
+        "stoploss_on_exchange_interval": 60,
+        "stoploss_on_exchange_limit_ratio": 0.99
+    },
+
+    "pairlists": [
+        { "method": "StaticPairList" }
+    ],
+
+    "protections": [
+        {
+            "method": "CooldownPeriod",
+            "stop_duration_candles": 4
+        },
+        {
+            "method": "MaxDrawdown",
+            "lookback_period_candles": 48,
+            "trade_limit": 10,
+            "stop_duration_candles": 12,
+            "max_allowed_drawdown": 0.10
+        },
+        {
+            "method": "StoplossGuard",
+            "lookback_period_candles": 24,
+            "trade_limit": 4,
+            "stop_duration_candles": 12,
+            "only_per_pair": false
+        },
+        {
+            "method": "LowProfitPairs",
+            "lookback_period_candles": 360,
+            "trade_limit": 4,
+            "stop_duration_candles": 60,
+            "required_profit": 0.0
+        }
+    ],
+
+    "_backtest_comment": "Fees + slippage are configured for honest backtests. BingX spot taker fee is ~0.001 (0.1%). Slippage is approximated via a custom price during backtest in the strategy / via --fee on the CLI.",
+    "fee": 0.001,
+
+    "telegram": {
+        "enabled": false,
+        "token": "",
+        "chat_id": "",
+        "notification_settings": {
+            "status": "on",
+            "warning": "on",
+            "startup": "on",
+            "entry": "on",
+            "exit": "on",
+            "protection_trigger": "on"
+        }
+    },
+
+    "api_server": {
+        "enabled": true,
+        "listen_ip_address": "0.0.0.0",
+        "listen_port": 8080,
+        "verbosity": "error",
+        "enable_openapi": true,
+        "jwt_secret_key": "change_me_random_string",
+        "ws_token": "change_me_random_token",
+        "CORS_origins": [],
+        "username": "freqtrader",
+        "password": "change_me_please"
+    },
+
+    "bot_name": "bingx-paper-bot",
+    "initial_state": "running",
+    "force_entry_enable": false,
+
+    "internals": {
+        "process_throttle_secs": 5,
+        "heartbeat_interval": 60
+    },
+
+    "dataformat_ohlcv": "feather",
+    "logfile": "user_data/logs/freqtrade.log"
+}

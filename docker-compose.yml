@@ -1,0 +1,76 @@
+# =============================================================================
+# Autonomous BingX Trading System — orchestration
+# -----------------------------------------------------------------------------
+# Services:
+#   postgres   TimescaleDB (Postgres + time-series) — trade history + market_context
+#   freqtrade  trading engine (BingX spot, DRY-RUN) + REST API + FreqUI
+#   sidecar    scheduled LLM market-context research service
+#   watchdog   independent risk halt / kill-switch
+#
+# Everything reads secrets from `.env` (see .env.example). Dry-run is the
+# default and there is no code path that flips to live trading.
+# =============================================================================
+
+services:
+  postgres:
+    image: timescale/timescaledb:latest-pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-trading}
+      POSTGRES_USER: ${POSTGRES_USER:-trading}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_me_please}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./research/schema.sql:/docker-entrypoint-initdb.d/10-schema.sql:ro
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-trading} -d ${POSTGRES_DB:-trading}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  freqtrade:
+    image: freqtradeorg/freqtrade:stable
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./user_data:/freqtrade/user_data
+    ports:
+      - "8080:8080"   # FreqUI + REST API
+    env_file:
+      - .env
+    command: >
+      trade
+      --config /freqtrade/user_data/config.json
+      --strategy MyStrategy
+      --logfile /freqtrade/user_data/logs/freqtrade.log
+
+  sidecar:
+    build:
+      context: .
+      dockerfile: research/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - .env
+    command: ["python", "-u", "research/sidecar.py"]
+
+  watchdog:
+    build:
+      context: .
+      dockerfile: risk/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - .env
+    command: ["python", "-u", "risk/watchdog.py"]
+
+volumes:
+  pgdata:

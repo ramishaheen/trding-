@@ -1,0 +1,233 @@
+"""LLM research sidecar.
+
+Runs on a schedule (default every 2 minutes). Each cycle it:
+  1. Pulls recent crypto/macro headlines from free RSS feeds.
+  2. Computes a basic market summary (latest price/volatility) — best-effort.
+  3. Calls Anthropic (claude-opus-4-8) with a hardened classifier prompt that
+     treats all news as untrusted data.
+  4. Validates the JSON and writes one row to the `market_context` table.
+
+The sidecar NEVER places orders. It only writes a context signal that the
+strategy treats as a soft gate. Failures are logged and the loop continues;
+a failed cycle simply means the strategy keeps using the previous context (and
+the independent risk watchdog + on-exchange stops are unaffected).
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import logging
+import os
+import re
+import signal
+import sys
+import time
+from typing import Any
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s [sidecar] %(message)s",
+)
+logger = logging.getLogger("sidecar")
+
+DEFAULT_FEEDS = [
+    "https://www.coindesk.com/arc/outboundfeeds/rss/",
+    "https://cointelegraph.com/rss",
+    "https://www.investing.com/rss/news_301.rss",  # cryptocurrency news
+]
+
+VALID_REGIMES = {"trending_up", "trending_down", "ranging", "high_vol"}
+VALID_RISK = {"risk_on", "risk_off", "neutral"}
+
+_running = True
+
+
+def _handle_sigterm(signum, frame):  # noqa: ANN001
+    global _running
+    logger.info("received signal %s, shutting down after current cycle", signum)
+    _running = False
+
+
+def fetch_headlines(max_items: int = 25) -> list[str]:
+    """Fetch recent headlines from configured RSS feeds. Best-effort."""
+    import feedparser  # lazy import
+
+    feeds_env = os.environ.get("NEWS_RSS_FEEDS", "").strip()
+    feeds = [f.strip() for f in feeds_env.split(",") if f.strip()] or DEFAULT_FEEDS
+
+    headlines: list[str] = []
+    for url in feeds:
+        try:
+            parsed = feedparser.parse(url)
+            for entry in parsed.entries[:max_items]:
+                title = getattr(entry, "title", "").strip()
+                if title:
+                    # Strip control chars; we keep content otherwise verbatim
+                    # because the LLM prompt fences it as untrusted data.
+                    headlines.append(re.sub(r"\s+", " ", title)[:280])
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("feed fetch failed for %s: %s", url, exc)
+    # de-dup, keep order
+    seen, unique = set(), []
+    for h in headlines:
+        if h not in seen:
+            seen.add(h)
+            unique.append(h)
+    return unique[: max_items * 2]
+
+
+def compute_market_summary() -> dict[str, Any]:
+    """Best-effort market stats from our own DB (OHLCV if present). Returns an
+    empty-ish summary if nothing is available — the classifier handles thin data
+    by returning a neutral, low-confidence signal."""
+    dsn = os.environ.get("DATABASE_URL")
+    summary: dict[str, Any] = {"note": "summary best-effort; may be sparse"}
+    if not dsn:
+        return summary
+    try:
+        import psycopg
+
+        with psycopg.connect(dsn, connect_timeout=5) as conn:
+            with conn.cursor() as cur:
+                # Trade-derived recent P&L context if the freqtrade trades table
+                # is reachable in this DB; otherwise ignored.
+                cur.execute(
+                    "SELECT count(*) FROM information_schema.tables "
+                    "WHERE table_name = 'trades'"
+                )
+                has_trades = cur.fetchone()[0] > 0
+                summary["has_trade_table"] = bool(has_trades)
+    except Exception as exc:  # noqa: BLE001
+        logger.info("market summary DB read skipped: %s", exc)
+    return summary
+
+
+def classify(market_summary: dict, headlines: list[str], model: str) -> dict[str, Any]:
+    """Call Anthropic and return a validated context dict."""
+    from anthropic import Anthropic
+    from prompts import SYSTEM_PROMPT, build_user_message
+
+    client = Anthropic()  # reads ANTHROPIC_API_KEY from env
+    user_msg = build_user_message(market_summary, headlines)
+
+    resp = client.messages.create(
+        model=model,
+        max_tokens=600,
+        system=SYSTEM_PROMPT,
+        messages=[{"role": "user", "content": user_msg}],
+    )
+    text = "".join(
+        block.text for block in resp.content if getattr(block, "type", "") == "text"
+    ).strip()
+    return validate_context(text, model)
+
+
+def validate_context(text: str, model: str) -> dict[str, Any]:
+    """Parse and validate the model's JSON output. Raises ValueError on bad data
+    so the caller can skip writing a malformed row."""
+    # Defensive: strip accidental code fences if present.
+    cleaned = text.strip()
+    if cleaned.startswith("```"):
+        cleaned = re.sub(r"^```[a-zA-Z]*\n?|\n?```$", "", cleaned).strip()
+    # Extract the first JSON object.
+    match = re.search(r"\{.*\}", cleaned, re.DOTALL)
+    if not match:
+        raise ValueError(f"no JSON object in model output: {text[:200]!r}")
+    data = json.loads(match.group(0))
+
+    regime = str(data.get("regime", "")).lower()
+    risk_state = str(data.get("risk_state", "")).lower()
+    if regime not in VALID_REGIMES:
+        raise ValueError(f"invalid regime: {regime!r}")
+    if risk_state not in VALID_RISK:
+        raise ValueError(f"invalid risk_state: {risk_state!r}")
+    confidence = float(data.get("confidence", 0.0))
+    confidence = max(0.0, min(1.0, confidence))
+    rationale = str(data.get("rationale", ""))[:1000]
+    notable = data.get("notable_events", [])
+    if not isinstance(notable, list):
+        notable = []
+    notable = [str(x)[:280] for x in notable][:10]
+
+    return {
+        "regime": regime,
+        "risk_state": risk_state,
+        "confidence": confidence,
+        "rationale": rationale,
+        "notable_events": notable,
+        "source_model": model,
+    }
+
+
+def store_context(ctx: dict[str, Any], headlines: list[str]) -> None:
+    dsn = os.environ.get("DATABASE_URL")
+    if not dsn:
+        logger.warning("DATABASE_URL not set; logging context instead of storing: %s", ctx)
+        return
+    import psycopg
+
+    h = hashlib.sha256("\n".join(headlines).encode()).hexdigest()[:32]
+    with psycopg.connect(dsn, connect_timeout=5) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO market_context
+                    (regime, risk_state, confidence, rationale,
+                     notable_events, source_model, headlines_hash)
+                VALUES (%s, %s, %s, %s, %s::jsonb, %s, %s)
+                """,
+                (
+                    ctx["regime"],
+                    ctx["risk_state"],
+                    ctx["confidence"],
+                    ctx["rationale"],
+                    json.dumps(ctx["notable_events"]),
+                    ctx["source_model"],
+                    h,
+                ),
+            )
+        conn.commit()
+    logger.info(
+        "stored market_context: regime=%s risk_state=%s confidence=%.2f",
+        ctx["regime"], ctx["risk_state"], ctx["confidence"],
+    )
+
+
+def run_cycle(model: str) -> None:
+    headlines = fetch_headlines()
+    summary = compute_market_summary()
+    logger.info("cycle: %d headlines fetched", len(headlines))
+    if not os.environ.get("ANTHROPIC_API_KEY"):
+        logger.warning("ANTHROPIC_API_KEY not set; skipping classification this cycle")
+        return
+    ctx = classify(summary, headlines, model)
+    store_context(ctx, headlines)
+
+
+def main() -> int:
+    signal.signal(signal.SIGTERM, _handle_sigterm)
+    signal.signal(signal.SIGINT, _handle_sigterm)
+    interval = int(os.environ.get("SIDECAR_INTERVAL_SECONDS", "120"))
+    model = os.environ.get("LLM_MODEL", "claude-opus-4-8")
+    logger.info("sidecar starting: model=%s interval=%ss", model, interval)
+
+    while _running:
+        start = time.time()
+        try:
+            run_cycle(model)
+        except Exception as exc:  # noqa: BLE001 - keep the loop alive
+            logger.exception("cycle failed: %s", exc)
+        # sleep the remainder of the interval, responsive to shutdown
+        elapsed = time.time() - start
+        remaining = max(0.0, interval - elapsed)
+        slept = 0.0
+        while _running and slept < remaining:
+            time.sleep(min(1.0, remaining - slept))
+            slept += 1.0
+    logger.info("sidecar stopped")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

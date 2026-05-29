@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install test deps
+        run: pip install pytest requests
+      - name: Run unit tests (dependency-free logic)
+        run: pytest -q
+
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate Freqtrade config JSON
+        run: python -c "import json; json.load(open('user_data/config.json')); print('config.json valid')"
+      - name: Validate docker-compose
+        run: |
+          cp .env.example .env
+          docker compose config -q && echo "compose valid"
+          rm -f .env
