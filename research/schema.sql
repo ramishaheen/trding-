@@ -121,3 +121,16 @@ CREATE TABLE IF NOT EXISTS strategy_insights (
 INSERT INTO system_flags (key, value, reason)
 VALUES ('live_enabled', 'off', 'init')
 ON CONFLICT (key) DO NOTHING;
+
+-- =============================================================================
+-- Idempotent migrations for EXISTING databases (safe to re-run any time).
+-- CREATE TABLE IF NOT EXISTS above does not add columns to a table that already
+-- exists, so these ALTERs bring an older DB up to date. Apply with:
+--   docker compose exec -T postgres \
+--     psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" < research/schema.sql
+-- =============================================================================
+ALTER TABLE market_context  ADD COLUMN IF NOT EXISTS sentiment     DOUBLE PRECISION NOT NULL DEFAULT 0;
+ALTER TABLE market_context  ADD COLUMN IF NOT EXISTS pause_trading BOOLEAN          NOT NULL DEFAULT FALSE;
+ALTER TABLE market_context  ADD COLUMN IF NOT EXISTS key_risks     JSONB            NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE market_context  ADD COLUMN IF NOT EXISTS per_pair_bias JSONB            NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE execution_orders ADD COLUMN IF NOT EXISTS meta         JSONB            NOT NULL DEFAULT '{}'::jsonb;
