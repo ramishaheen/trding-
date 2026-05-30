@@ -395,6 +395,29 @@ def build_exit_signal(pair: str, amount: Optional[float], now_ts: float,
     }
 
 
+def volatility_size_multiplier(atr_pct: float, max_atr_pct: float,
+                               floor: float = 0.4) -> float:
+    """Throttle position size as volatility rises (risk control). Returns 1.0
+    while calm (ATR% <= half the cap), then scales linearly down to `floor` as
+    ATR% approaches the cap. atr_pct and max_atr_pct are fractions (ATR/price)."""
+    if max_atr_pct <= 0 or atr_pct <= 0:
+        return 1.0
+    half = max_atr_pct / 2.0
+    if atr_pct <= half:
+        return 1.0
+    if atr_pct >= max_atr_pct:
+        return floor
+    frac = (atr_pct - half) / (max_atr_pct - half)
+    return round(1.0 - frac * (1.0 - floor), 3)
+
+
+def correlation_cap_ok(open_correlated_count: int, max_correlated: int) -> bool:
+    """True if opening another correlated position stays within the cap. The
+    allowlisted majors (BTC/ETH/SOL) move together, so we treat them as one
+    correlation group and limit how many can be open at once."""
+    return open_correlated_count < max_correlated
+
+
 def bias_quality_overrides(bias: Optional[str]) -> dict:
     """Translate the LLM's per-pair bias into trade-quality component overrides.
 

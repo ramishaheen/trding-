@@ -44,7 +44,21 @@ from strategy_logic import (
     bias_quality_overrides,
     build_entry_signal,
     build_exit_signal,
+    correlation_cap_ok,
+    volatility_size_multiplier,
 )
+
+
+def _open_trade_count() -> int:
+    """Number of currently-open trades (for the correlation cap). Best-effort."""
+    try:
+        from freqtrade.persistence import Trade
+        try:
+            return int(Trade.get_open_trade_count())
+        except Exception:  # noqa: BLE001
+            return len(Trade.get_open_trades())
+    except Exception:  # noqa: BLE001
+        return 0
 
 logger = logging.getLogger(__name__)
 
@@ -157,6 +171,9 @@ class MyStrategy(IStrategy):
     # Regime filter: skip entries when volatility (ATR/price) is too high
     # (chaotic / chop). Hyperopt-tunable so walk-forward can optimise it.
     buy_max_atr_pct = DecimalParameter(0.01, 0.08, default=0.04, decimals=3, space="buy", optimize=True)
+    # Risk control: treat the correlated majors (BTC/ETH/SOL) as one group and
+    # cap how many can be open at once, so we don't stack the same bet 3x.
+    buy_max_correlated = IntParameter(1, 3, default=2, space="buy", optimize=False)
 
     def _params(self) -> StrategyParams:
         return StrategyParams(
@@ -250,6 +267,12 @@ class MyStrategy(IStrategy):
             logger.info("Entry on %s blocked by soft gate: %s", pair, gate.reason)
             return False
 
+        # Correlation cap — don't stack more than N of the correlated majors.
+        if not correlation_cap_ok(_open_trade_count(), int(self.buy_max_correlated.value)):
+            logger.info("Entry on %s blocked: correlation cap (%d already open)",
+                        pair, _open_trade_count())
+            return False
+
         # Propose a COMPLETE trade to the Risk Governor pipeline (live path).
         # The paper engine still records its own dry-run trade; the governor
         # independently decides whether a REAL order is placed.
@@ -291,8 +314,18 @@ class MyStrategy(IStrategy):
         risk_state, confidence, pause = _read_latest_market_context()
         gate = apply_context_gate(risk_state, confidence, self._params(), pause_trading=pause)
         stake = proposed_stake * gate.stake_multiplier
+
+        # Volatility throttle — shrink size when ATR% is elevated (risk control).
+        df, _ = self.dp.get_analyzed_dataframe(pair, self.timeframe)
+        if df is not None and not df.empty:
+            close = float(df["close"].iloc[-1])
+            atr_value = float(df["atr"].iloc[-1])
+            if close > 0 and atr_value > 0 and not pd.isna(atr_value):
+                stake *= volatility_size_multiplier(atr_value / close,
+                                                    float(self.buy_max_atr_pct.value))
+
         if min_stake is not None and stake < min_stake:
             # If the reduced stake falls below the venue minimum, skip rather
-            # than upsize (the gate must never increase exposure).
+            # than upsize (these gates must never increase exposure).
             return 0.0
         return stake

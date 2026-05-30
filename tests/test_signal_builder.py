@@ -5,7 +5,33 @@ from strategy_logic import (
     bias_quality_overrides,
     build_entry_signal,
     build_exit_signal,
+    correlation_cap_ok,
+    volatility_size_multiplier,
 )
+
+
+# --- tighter risk controls -------------------------------------------------
+def test_volatility_throttle_full_size_when_calm():
+    # atr% well under half the cap -> full size
+    assert volatility_size_multiplier(0.01, 0.04) == 1.0
+
+
+def test_volatility_throttle_floors_when_hot():
+    # at/above the cap -> floor (0.4 default)
+    assert volatility_size_multiplier(0.04, 0.04) == 0.4
+    assert volatility_size_multiplier(0.06, 0.04) == 0.4
+
+
+def test_volatility_throttle_scales_between():
+    m = volatility_size_multiplier(0.03, 0.04)   # between half(0.02) and cap(0.04)
+    assert 0.4 < m < 1.0
+
+
+def test_correlation_cap():
+    assert correlation_cap_ok(0, 2) is True
+    assert correlation_cap_ok(1, 2) is True
+    assert correlation_cap_ok(2, 2) is False     # already at the cap -> block
+    assert correlation_cap_ok(3, 2) is False
 
 P = StrategyParams(atr_period=14, atr_stop_mult=2.0)
 
