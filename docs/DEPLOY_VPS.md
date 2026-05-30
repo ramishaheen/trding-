@@ -59,12 +59,32 @@ DASHBOARD_DOMAIN=trade.ohmycompany.ai
 `DASHBOARD_PASSWORD` is the single password anyone must enter to log in — it's
 what stops strangers from reaching your TURN ON / STOP buttons.
 
-## 6. Start everything (with the public HTTPS proxy)
+## 6. Start everything
+
+**If nothing else uses ports 80/443** — use the bundled Caddy HTTPS proxy:
 ```bash
 docker compose --profile public up -d
 ```
-First time downloads/builds (a few minutes) and Caddy automatically gets a free
-HTTPS certificate for your subdomain. Check it's up: `docker compose ps`.
+Caddy auto-fetches a free HTTPS cert for your subdomain.
+
+**If you ALREADY run nginx / Apache on 80/443** (very common) — do NOT use
+`--profile public`; Caddy would fail with *"port is already allocated"*. Deploy
+without it and let your existing web server proxy to the dashboard:
+```bash
+docker compose up -d --build      # no --profile public
+```
+The dashboard listens on `127.0.0.1:8050`; point an nginx server block at it
+(your existing TLS/certbot handles HTTPS):
+```nginx
+server {
+    server_name trade.ohmycompany.ai;
+    location / { proxy_pass http://127.0.0.1:8050; proxy_set_header Host $host; }
+    # listen 443 ssl; + your certbot cert lines
+}
+```
+Then `sudo nginx -t && sudo systemctl reload nginx`.
+
+First run downloads/builds (a few minutes). Check it's up: `docker compose ps`.
 
 ## 7. Lock down the firewall
 In **hPanel → VPS → Firewall**, allow only:
