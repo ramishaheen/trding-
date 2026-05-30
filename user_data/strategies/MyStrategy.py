@@ -123,16 +123,17 @@ def _emit_signal(payload: dict) -> None:
 class MyStrategy(IStrategy):
     INTERFACE_VERSION = 3
 
-    timeframe = "1h"
+    timeframe = "5m"   # fast/scalp mode (paper). Was 1h. Re-backtest before live.
     can_short = False  # spot, long-only
 
     # Moved from config.json: freqtrade 2026.x rejects 'protections' in the config file.
     protections = [{'method': 'CooldownPeriod', 'stop_duration_candles': 4}, {'method': 'MaxDrawdown', 'lookback_period_candles': 48, 'trade_limit': 10, 'stop_duration_candles': 12, 'max_allowed_drawdown': 0.1}, {'method': 'StoplossGuard', 'lookback_period_candles': 24, 'trade_limit': 4, 'stop_duration_candles': 12, 'only_per_pair': False}, {'method': 'LowProfitPairs', 'lookback_period_candles': 360, 'trade_limit': 4, 'stop_duration_candles': 60, 'required_profit': 0.0}]
 
-    # ROI / stoploss: the real stop is ATR-based via custom_stoploss; this is a
-    # conservative static backstop.
-    minimal_roi = {"0": 0.10, "240": 0.04, "480": 0.02, "720": 0}
-    stoploss = -0.10
+    # Scalp ROI — take small profits, but every target is ABOVE the ~0.2%
+    # round-trip fee so wins are net-positive (no breakeven-loss floor). NOT a
+    # guarantee of profit; validate net P&L by backtest before any real money.
+    minimal_roi = {"0": 0.008, "20": 0.005, "45": 0.003}
+    stoploss = -0.03   # tighter static backstop; the ATR stop (below) usually binds first
     use_custom_stoploss = True
 
     trailing_stop = False
@@ -150,9 +151,9 @@ class MyStrategy(IStrategy):
     buy_pullback_pct = DecimalParameter(0.005, 0.05, default=0.02, decimals=3, space="buy", optimize=True)
     sell_rsi = DecimalParameter(65, 85, default=75, decimals=0, space="sell", optimize=True)
     atr_period = IntParameter(7, 28, default=14, space="sell", optimize=True)
-    atr_stop_mult = DecimalParameter(1.0, 4.0, default=2.0, decimals=1, space="sell", optimize=True)
+    atr_stop_mult = DecimalParameter(1.0, 4.0, default=1.5, decimals=1, space="sell", optimize=True)
     take_profit_rr = DecimalParameter(1.5, 3.0, default=2.0, decimals=1, space="sell", optimize=False)
-    max_holding_minutes = IntParameter(60, 4320, default=1440, space="sell", optimize=False)
+    max_holding_minutes = IntParameter(30, 4320, default=240, space="sell", optimize=False)  # scalp: exit within hours
     # Regime filter: skip entries when volatility (ATR/price) is too high
     # (chaotic / chop). Hyperopt-tunable so walk-forward can optimise it.
     buy_max_atr_pct = DecimalParameter(0.01, 0.08, default=0.04, decimals=3, space="buy", optimize=True)
