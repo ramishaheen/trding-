@@ -412,7 +412,19 @@ async def test_trade(request: Request) -> JSONResponse:
         body = await request.json()
     except Exception:  # noqa: BLE001
         body = {}
-    pair = (body or {}).get("pair") or "BTC/USDT"
+    pair = (body or {}).get("pair")
+    if not pair:
+        # Auto-pick the first allowlisted pair that doesn't already have an open
+        # trade (Freqtrade allows only one position per pair).
+        status = _freqtrade("status") or []
+        open_pairs = {t.get("pair") for t in status if isinstance(t, dict)}
+        allow = [p.strip() for p in os.environ.get(
+            "LIVE_PAIR_ALLOWLIST", "BTC/USDT,ETH/USDT,SOL/USDT").split(",") if p.strip()]
+        pair = next((p for p in allow if p not in open_pairs), None)
+        if not pair:
+            return JSONResponse(
+                {"ok": False, "error": "All pairs already have an open paper trade — use CLOSE TEST first."},
+                status_code=200)
     try:
         r = requests.post(f"{FREQTRADE_API_URL}/api/v1/forceenter",
                           auth=FREQTRADE_AUTH, json={"pair": pair}, timeout=8)

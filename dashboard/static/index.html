@@ -412,12 +412,12 @@ async function toggleArm(){
 }
 
 async function testTrade(){
-  if(!confirm('Open a PAPER test trade on BTC/USDT now?\n\nDry-run only — no real money. Lets you see a trade flow through the system.')) return;
+  if(!confirm('Open a PAPER test trade now?\n\nDry-run only — no real money. Picks the next coin that isn\'t already open.')) return;
   try{
     const r = await (await fetch('/api/test_trade',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({pair:'BTC/USDT'})})).json();
-    if(r.ok) alert('Test trade opened — check "Open trades now".');
-    else alert('Could not open it: '+(r.error || (typeof r.result==='string'? r.result : JSON.stringify(r.result)) || ('HTTP '+r.status)));
+      body:'{}'})).json();
+    if(r.ok) alert('Test trade opened on '+(r.pair||'a coin')+' — check "Open trades now".');
+    else alert((r.error || (typeof r.result==='string'? r.result : JSON.stringify(r.result)) || ('HTTP '+r.status)));
   }catch(e){ alert('Request failed: '+e); }
   tick();
 }
