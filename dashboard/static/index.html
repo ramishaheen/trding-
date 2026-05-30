@@ -178,6 +178,7 @@
         <div style="flex:1;min-width:240px"><div class="tiny muted">last 7 days (net per day)</div><canvas id="perfChart" height="64" style="margin-top:6px"></canvas></div>
       </div>
       <div class="tiny" id="perfDaily" style="margin-top:10px">—</div>
+      <div class="tiny muted" id="perfBacktest" style="margin-top:8px;border-top:1px solid rgba(255,255,255,.06);padding-top:8px"></div>
     </div>
 
     <!-- Bot decisions -->
@@ -228,6 +229,8 @@ const DEMO = {demo:true,kill_switch_active:false,
     daily:[{date:"2026-05-24",pnl:0.8,trades:3},{date:"2026-05-25",pnl:-0.4,trades:2},
       {date:"2026-05-26",pnl:1.1,trades:4},{date:"2026-05-27",pnl:2.0,trades:3},
       {date:"2026-05-28",pnl:1.8,trades:2},{date:"2026-05-29",pnl:1.2,trades:4}]},
+  backtest:{profit_total_pct:7.3,profit_factor:1.42,winrate_pct:58.0,max_drawdown_pct:6.1,
+    trades:120,timeframe:"5m",range:"2026-01-01 → 2026-05-30"},
   ts:Date.now()/1000};
 
 async function fetchState(){
@@ -354,6 +357,14 @@ function render(s){
   document.getElementById('perfDaily').innerHTML=(pf.daily&&pf.daily.length)?
     pf.daily.map(d=>`<span style="color:${(d.pnl||0)>=0?'var(--good)':'var(--bad)'}">${d.date.slice(5)} ${money(d.pnl)}</span>`).join(' &nbsp;·&nbsp; ')
     : '<span class="muted">no closed trades yet</span>';
+  // Backtest result (historical validation) shown next to the live numbers
+  const bt=s.backtest||{}; const be=document.getElementById('perfBacktest');
+  if(bt && bt.trades){
+    const tot=bt.profit_total_pct, c=tot>0?'var(--good)':tot<0?'var(--bad)':'var(--muted)';
+    be.innerHTML='Backtest ('+(bt.timeframe||'')+', '+(bt.range||'')+'): '
+      +'<b style="color:'+c+'">'+(tot>=0?'+':'')+tot+'% net</b> · PF '+(bt.profit_factor??'—')
+      +' · win '+(bt.winrate_pct??'—')+'% · '+bt.trades+' trades · max drop '+(bt.max_drawdown_pct??'—')+'%';
+  } else { be.innerHTML='<span class="muted">No backtest yet — run ./scripts/backtest.sh to validate on history.</span>'; }
 
   const paperMode=(rs.trading_mode||'').toLowerCase().includes('paper');
   const govNote = paperMode ? '— (shown in live mode)' : '—';

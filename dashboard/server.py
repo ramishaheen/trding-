@@ -228,6 +228,9 @@ def _demo_state() -> dict:
                                   {"date": "2026-05-27", "pnl": 2.0, "trades": 3},
                                   {"date": "2026-05-28", "pnl": 1.8, "trades": 2},
                                   {"date": "2026-05-29", "pnl": 1.2, "trades": 4}]},
+        "backtest": {"profit_total_pct": 7.3, "profit_factor": 1.42, "winrate_pct": 58.0,
+                     "max_drawdown_pct": 6.1, "trades": 120, "timeframe": "5m",
+                     "range": "2026-01-01 → 2026-05-30"},
         "ts": time.time(),
     }
 
@@ -318,6 +321,7 @@ def state() -> JSONResponse:
         "trades": (positions + recent_closed)[:12],   # open first, then recent closed
         "equity_curve": [],
         "performance": _performance(closed_data),
+        "backtest": _db_flag("backtest_summary") or {},
         "ts": time.time(),
         # Diagnostics — visit /api/state to see why a panel is blank.
         "_diag": {

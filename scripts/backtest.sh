@@ -18,7 +18,12 @@ $DC download-data --timeframe "$TF" --timerange "$TR" --pairs $PAIRS || true
 echo
 echo "==> Backtesting MyStrategy on $TF over $TR (fees included) ..."
 $DC backtesting --config user_data/config.json --strategy MyStrategy \
-    --timeframe "$TF" --timerange "$TR"
+    --timeframe "$TF" --timerange "$TR" --export trades
+
+echo
+echo "==> Saving the summary to the dashboard ..."
+$DC python /freqtrade/user_data/backtest_report.py || \
+  echo "(could not store summary — dashboard will just keep the live numbers)"
 
 echo
 echo "================================================================"
