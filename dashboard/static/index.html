@@ -171,12 +171,13 @@
     <!-- Profit after fees (the number that actually matters) -->
     <div class="card span12">
       <h3>Profit after fees <span class="help" data-tip="Real net result after exchange fees. Watch THIS, not single trades — it's whether the bot is actually adding up over time.">?</span></h3>
-      <div style="display:flex;gap:34px;flex-wrap:wrap;align-items:flex-end">
+      <div style="display:flex;gap:34px;flex-wrap:wrap;align-items:center">
         <div><div class="tiny muted">Today</div><div class="big" id="perfToday">—</div><div class="tiny muted" id="perfTodayN"></div></div>
-        <div><div class="tiny muted">This week</div><div class="big" id="perfWeek">—</div><div class="tiny muted" id="perfWeekN"></div></div>
+        <div><div class="tiny muted">This week <span id="perfTrend"></span></div><div class="big" id="perfWeek">—</div><div class="tiny muted" id="perfWeekN"></div></div>
         <div><div class="tiny muted">All-time</div><div class="big" id="perfAll">—</div><div class="tiny muted" id="perfAllN"></div></div>
-        <div style="flex:1;min-width:220px"><div class="tiny muted">last days</div><div class="tiny" id="perfDaily" style="margin-top:6px">—</div></div>
+        <div style="flex:1;min-width:240px"><div class="tiny muted">last 7 days (net per day)</div><canvas id="perfChart" height="64" style="margin-top:6px"></canvas></div>
       </div>
+      <div class="tiny" id="perfDaily" style="margin-top:10px">—</div>
     </div>
 
     <!-- Bot decisions -->
@@ -347,6 +348,9 @@ function render(s){
   setPerf('perfToday','perfTodayN',pf.today_pnl,pf.today_trades);
   setPerf('perfWeek','perfWeekN',pf.week_pnl,pf.week_trades);
   setPerf('perfAll','perfAllN',pf.total_pnl,pf.total_trades);
+  const tr=document.getElementById('perfTrend'); const wv=pf.week_pnl;
+  tr.textContent = (wv>0?'▲':wv<0?'▼':''); tr.className=(wv>0?'pos':wv<0?'neg':'');
+  drawPerfBars(pf.daily||[]);
   document.getElementById('perfDaily').innerHTML=(pf.daily&&pf.daily.length)?
     pf.daily.map(d=>`<span style="color:${(d.pnl||0)>=0?'var(--good)':'var(--bad)'}">${d.date.slice(5)} ${money(d.pnl)}</span>`).join(' &nbsp;·&nbsp; ')
     : '<span class="muted">no closed trades yet</span>';
@@ -357,6 +361,22 @@ function render(s){
   ks.textContent=s.kill_switch_active?'ON — restart needed':'Off (all clear)';
   ks.className='v '+(s.kill_switch_active?'neg':'pos');
   document.getElementById('updated').textContent='updated '+new Date((s.ts||Date.now()/1000)*1000).toLocaleTimeString();
+}
+
+function drawPerfBars(daily){
+  // Native canvas bars — green up / red down, around a zero line. No library.
+  const c=document.getElementById('perfChart'); if(!c||!c.getContext) return;
+  const W=c.width=c.clientWidth||300, H=c.height=64, mid=H/2;
+  const ctx=c.getContext('2d'); ctx.clearRect(0,0,W,H);
+  ctx.strokeStyle='rgba(255,255,255,.12)'; ctx.beginPath(); ctx.moveTo(0,mid); ctx.lineTo(W,mid); ctx.stroke();
+  if(!daily.length) return;
+  const maxAbs=Math.max(0.01,...daily.map(d=>Math.abs(d.pnl||0)));
+  const n=daily.length, gap=6, bw=Math.max(4,(W-(n-1)*gap)/n);
+  daily.forEach((d,i)=>{
+    const v=d.pnl||0, h=Math.max(2,(Math.abs(v)/maxAbs)*(mid-4)), x=i*(bw+gap);
+    ctx.fillStyle=(v>=0?'#2bd49a':'#ff6171');
+    if(v>=0) ctx.fillRect(x,mid-h,bw,h); else ctx.fillRect(x,mid,bw,h);
+  });
 }
 
 function drawChart(data){
