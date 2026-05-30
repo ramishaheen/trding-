@@ -2,13 +2,15 @@
 # FAST validation — replay the strategy over historical data (months of 5m
 # candles in seconds). Far more signal than days of live paper.
 #
-#   ./scripts/backtest.sh [TIMERANGE] [TIMEFRAME]
-#   ./scripts/backtest.sh 20260101-20260530 5m
+#   ./scripts/backtest.sh [TIMERANGE] [TIMEFRAME] [STRATEGY]
+#   ./scripts/backtest.sh 20250601-20260530 5m MyStrategy
+#   ./scripts/backtest.sh 20250601-20260530 1h RegimeStrategy   # the A/B variant
 set -e
 cd "$(dirname "$0")/.."
 
 TR="${1:-20260101-20260530}"
 TF="${2:-5m}"
+STRAT="${3:-MyStrategy}"
 # Download a WIDE range (default: well before the backtest start) so the backtest
 # isn't silently clipped to the few weeks already cached. BingX may not have data
 # all the way back — that's an exchange limit, not a bug; you get what's available.
@@ -22,13 +24,14 @@ echo "    (If a WARNING says data only goes back to a recent date, that's how fa
 echo "     BingX serves $TF history — the backtest will use the available window.)"
 
 echo
-echo "==> Backtesting MyStrategy on $TF over $TR (fees included) ..."
-$DC backtesting --config user_data/config.json --strategy MyStrategy \
+echo "==> Backtesting $STRAT on $TF over $TR (fees included) ..."
+$DC backtesting --config user_data/config.json --strategy "$STRAT" \
     --timeframe "$TF" --timerange "$TR" --export trades
 
 echo
 echo "==> Saving the summary to the dashboard ..."
-$DC python /freqtrade/user_data/backtest_report.py || \
+docker compose run --rm -e BACKTEST_STRATEGY="$STRAT" freqtrade \
+  python /freqtrade/user_data/backtest_report.py || \
   echo "(could not store summary — dashboard will just keep the live numbers)"
 
 echo
