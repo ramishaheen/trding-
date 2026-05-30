@@ -10,6 +10,8 @@ user_data/data/
 user_data/backtest_results/
 user_data/hyperopt_results/
 user_data/plot/
+# Hyperopt-generated strategy params (override the code at runtime) — keep local.
+user_data/strategies/*.json
 user_data/*.sqlite
 user_data/*.sqlite-shm
 user_data/*.sqlite-wal

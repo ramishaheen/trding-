@@ -9,11 +9,17 @@ cd "$(dirname "$0")/.."
 
 TR="${1:-20260101-20260530}"
 TF="${2:-5m}"
+# Download a WIDE range (default: well before the backtest start) so the backtest
+# isn't silently clipped to the few weeks already cached. BingX may not have data
+# all the way back — that's an exchange limit, not a bug; you get what's available.
+DL="${DOWNLOAD_RANGE:-20250601-20260530}"
 PAIRS="BTC/USDT ETH/USDT SOL/USDT"
 DC="docker compose run --rm freqtrade"
 
-echo "==> Downloading $TF data for $TR (skips what's already cached) ..."
-$DC download-data --timeframe "$TF" --timerange "$TR" --pairs $PAIRS || true
+echo "==> Downloading $TF data for $DL (this can take a while the first time) ..."
+$DC download-data --timeframe "$TF" --timerange "$DL" --pairs $PAIRS || true
+echo "    (If a WARNING says data only goes back to a recent date, that's how far"
+echo "     BingX serves $TF history — the backtest will use the available window.)"
 
 echo
 echo "==> Backtesting MyStrategy on $TF over $TR (fees included) ..."
@@ -36,4 +42,9 @@ echo
 echo "Positive total + profit factor > 1 over many trades = worth a"
 echo "walk-forward test (./scripts/walk_forward.sh) before ANY real money."
 echo "If it's negative, frequent scalping is churning fees -> we tune."
+echo
+echo "0 TRADES? Two causes: (1) a leftover user_data/strategies/MyStrategy.json"
+echo "from hyperopt is overriding the code with a too-narrow filter — remove it:"
+echo "     rm -f user_data/strategies/MyStrategy.json && docker compose restart freqtrade"
+echo "(2) long-only strategy correctly sits out a downtrend — that can be right."
 echo "================================================================"
