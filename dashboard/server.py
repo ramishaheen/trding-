@@ -220,6 +220,14 @@ def _demo_state() -> dict:
             {"pair": "SOL/USDT", "profit_pct": -0.6, "open_date": "—", "is_open": False},
         ],
         "equity_curve": [100, 100.4, 99.8, 101.2, 102.6, 104.1, 106.5],
+        "performance": {"today_pnl": 1.20, "today_trades": 4, "week_pnl": 6.50,
+                        "week_trades": 18, "total_pnl": 6.50, "total_trades": 18,
+                        "daily": [{"date": "2026-05-24", "pnl": 0.8, "trades": 3},
+                                  {"date": "2026-05-25", "pnl": -0.4, "trades": 2},
+                                  {"date": "2026-05-26", "pnl": 1.1, "trades": 4},
+                                  {"date": "2026-05-27", "pnl": 2.0, "trades": 3},
+                                  {"date": "2026-05-28", "pnl": 1.8, "trades": 2},
+                                  {"date": "2026-05-29", "pnl": 1.2, "trades": 4}]},
         "ts": time.time(),
     }
 
@@ -299,6 +307,7 @@ def state() -> JSONResponse:
         "positions": positions,
         "trades": positions,
         "equity_curve": [],
+        "performance": _performance(),
         "ts": time.time(),
         # Diagnostics — visit /api/state to see why a panel is blank.
         "_diag": {
@@ -330,6 +339,51 @@ def disarm() -> dict:
         return {"ok": r.ok, "result": r.json() if r.ok else r.text}
     except Exception as exc:  # noqa: BLE001
         return {"ok": False, "error": str(exc)}
+
+
+_LAST_PERF_LOG = ""
+
+
+def _performance() -> dict:
+    """Net P&L AFTER FEES from Freqtrade's closed trades (close_profit_abs already
+    nets fees). Today / this week / all-time + a small daily series. Logged once
+    per UTC day so there's a record without spamming."""
+    global _LAST_PERF_LOG
+    from datetime import datetime, timedelta, timezone
+
+    data = _freqtrade("trades?limit=500")
+    trades = data.get("trades") if isinstance(data, dict) else (data if isinstance(data, list) else [])
+    today = datetime.now(timezone.utc).date()
+    week_start = (today - timedelta(days=6)).isoformat()
+    today_s = today.isoformat()
+
+    daily: dict[str, list] = {}
+    total_pnl, total_n = 0.0, 0
+    for t in trades or []:
+        if t.get("is_open"):
+            continue
+        pnl, cd = t.get("close_profit_abs"), (t.get("close_date") or "")
+        if pnl is None or len(cd) < 10:
+            continue
+        d = cd[:10]
+        agg = daily.setdefault(d, [0.0, 0])
+        agg[0] += float(pnl); agg[1] += 1
+        total_pnl += float(pnl); total_n += 1
+
+    tday = daily.get(today_s, [0.0, 0])
+    week_pnl = sum(v[0] for d, v in daily.items() if d >= week_start)
+    week_n = sum(v[1] for d, v in daily.items() if d >= week_start)
+    series = [{"date": d, "pnl": round(v[0], 2), "trades": v[1]}
+              for d, v in sorted(daily.items())][-7:]
+
+    if total_n and today_s != _LAST_PERF_LOG:
+        _LAST_PERF_LOG = today_s
+        logger.info("PERF after fees — today $%.2f (%d), week $%.2f, all $%.2f",
+                    tday[0], tday[1], week_pnl, total_pnl)
+
+    return {"today_pnl": round(tday[0], 2), "today_trades": tday[1],
+            "week_pnl": round(week_pnl, 2), "week_trades": week_n,
+            "total_pnl": round(total_pnl, 2), "total_trades": total_n, "daily": series}
 
 
 @app.post("/api/test_trade")

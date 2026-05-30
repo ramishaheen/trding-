@@ -168,6 +168,17 @@
       <tbody id="tradeBody"><tr><td colspan="3" class="muted">—</td></tr></tbody></table>
     </div>
 
+    <!-- Profit after fees (the number that actually matters) -->
+    <div class="card span12">
+      <h3>Profit after fees <span class="help" data-tip="Real net result after exchange fees. Watch THIS, not single trades — it's whether the bot is actually adding up over time.">?</span></h3>
+      <div style="display:flex;gap:34px;flex-wrap:wrap;align-items:flex-end">
+        <div><div class="tiny muted">Today</div><div class="big" id="perfToday">—</div><div class="tiny muted" id="perfTodayN"></div></div>
+        <div><div class="tiny muted">This week</div><div class="big" id="perfWeek">—</div><div class="tiny muted" id="perfWeekN"></div></div>
+        <div><div class="tiny muted">All-time</div><div class="big" id="perfAll">—</div><div class="tiny muted" id="perfAllN"></div></div>
+        <div style="flex:1;min-width:220px"><div class="tiny muted">last days</div><div class="tiny" id="perfDaily" style="margin-top:6px">—</div></div>
+      </div>
+    </div>
+
     <!-- Bot decisions -->
     <div class="card span12">
       <h3>What the bot decided <span class="help" data-tip="A quick log of the safety system's latest choices.">?</span></h3>
@@ -211,7 +222,12 @@ const DEMO = {demo:true,kill_switch_active:false,
   positions:[{pair:"BTC/USDT",amount:0.0012,open_rate:61000,profit_pct:1.4}],
   trades:[{pair:"BTC/USDT",profit_pct:1.4,is_open:true},{pair:"ETH/USDT",profit_pct:2.1,is_open:false},
     {pair:"SOL/USDT",profit_pct:-0.6,is_open:false}],
-  equity_curve:[100,100.4,99.8,101.2,102.6,104.1,106.5],ts:Date.now()/1000};
+  equity_curve:[100,100.4,99.8,101.2,102.6,104.1,106.5],
+  performance:{today_pnl:1.20,today_trades:4,week_pnl:6.50,week_trades:18,total_pnl:6.50,total_trades:18,
+    daily:[{date:"2026-05-24",pnl:0.8,trades:3},{date:"2026-05-25",pnl:-0.4,trades:2},
+      {date:"2026-05-26",pnl:1.1,trades:4},{date:"2026-05-27",pnl:2.0,trades:3},
+      {date:"2026-05-28",pnl:1.8,trades:2},{date:"2026-05-29",pnl:1.2,trades:4}]},
+  ts:Date.now()/1000};
 
 async function fetchState(){
   try{ const r=await fetch('/api/state',{cache:'no-store'}); if(!r.ok) throw 0; return await r.json(); }
@@ -319,6 +335,21 @@ function render(s){
     `<tr><td>${(t.pair||'—').replace('/USDT','')}</td><td class="${(t.profit_pct||0)>=0?'pos':'neg'}">${pct(t.profit_pct)}</td>
      <td class="muted">${t.is_open?'open':'closed'}</td></tr>`).join('')
     :'<tr><td colspan="3" class="muted">No trades yet</td></tr>';
+
+  // Profit after fees
+  const pf=s.performance||{};
+  const money=v=>v==null?'—':((v>=0?'+$':'−$')+Math.abs(v).toFixed(2));
+  function setPerf(id,nid,v,n){
+    const el=document.getElementById(id); el.textContent=money(v);
+    el.className='big '+(v>0?'pos':v<0?'neg':'');
+    document.getElementById(nid).textContent=(n!=null?n+' trades':'');
+  }
+  setPerf('perfToday','perfTodayN',pf.today_pnl,pf.today_trades);
+  setPerf('perfWeek','perfWeekN',pf.week_pnl,pf.week_trades);
+  setPerf('perfAll','perfAllN',pf.total_pnl,pf.total_trades);
+  document.getElementById('perfDaily').innerHTML=(pf.daily&&pf.daily.length)?
+    pf.daily.map(d=>`<span style="color:${(d.pnl||0)>=0?'var(--good)':'var(--bad)'}">${d.date.slice(5)} ${money(d.pnl)}</span>`).join(' &nbsp;·&nbsp; ')
+    : '<span class="muted">no closed trades yet</span>';
 
   document.getElementById('lastApproved').textContent=rs.last_approved_trade||'—';
   document.getElementById('lastReject').textContent=rs.last_rejection_reason||'—';
