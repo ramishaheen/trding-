@@ -287,7 +287,17 @@ def state() -> JSONResponse:
         for t in status:
             positions.append({"pair": t.get("pair"), "amount": t.get("amount"),
                               "open_rate": t.get("open_rate"),
-                              "profit_pct": (t.get("profit_ratio") or 0) * 100})
+                              "profit_pct": (t.get("profit_ratio") or 0) * 100, "is_open": True})
+
+    # Closed trades (for "Recent trades" + the after-fees performance panel).
+    closed_data = _freqtrade("trades?limit=200")
+    closed_list = (closed_data.get("trades") if isinstance(closed_data, dict)
+                   else closed_data) or []
+    recent_closed = []
+    for t in [c for c in closed_list if not c.get("is_open")][-12:][::-1]:
+        recent_closed.append({"pair": t.get("pair"),
+                              "profit_pct": (t.get("close_profit") or 0) * 100,
+                              "is_open": False})
 
     # Paper-mode fallback: when the governor (executor) isn't producing status,
     # show Freqtrade's dry-run wallet so the money/weekly panels aren't blank.
@@ -305,9 +315,9 @@ def state() -> JSONResponse:
         "weekly_target": weekly or {},
         "market_context": mc or {},
         "positions": positions,
-        "trades": positions,
+        "trades": (positions + recent_closed)[:12],   # open first, then recent closed
         "equity_curve": [],
-        "performance": _performance(),
+        "performance": _performance(closed_data),
         "ts": time.time(),
         # Diagnostics — visit /api/state to see why a panel is blank.
         "_diag": {
@@ -344,14 +354,15 @@ def disarm() -> dict:
 _LAST_PERF_LOG = ""
 
 
-def _performance() -> dict:
+def _performance(data=None) -> dict:
     """Net P&L AFTER FEES from Freqtrade's closed trades (close_profit_abs already
     nets fees). Today / this week / all-time + a small daily series. Logged once
     per UTC day so there's a record without spamming."""
     global _LAST_PERF_LOG
     from datetime import datetime, timedelta, timezone
 
-    data = _freqtrade("trades?limit=500")
+    if data is None:
+        data = _freqtrade("trades?limit=500")
     trades = data.get("trades") if isinstance(data, dict) else (data if isinstance(data, list) else [])
     today = datetime.now(timezone.utc).date()
     week_start = (today - timedelta(days=6)).isoformat()

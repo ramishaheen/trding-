@@ -355,8 +355,10 @@ function render(s){
     pf.daily.map(d=>`<span style="color:${(d.pnl||0)>=0?'var(--good)':'var(--bad)'}">${d.date.slice(5)} ${money(d.pnl)}</span>`).join(' &nbsp;·&nbsp; ')
     : '<span class="muted">no closed trades yet</span>';
 
-  document.getElementById('lastApproved').textContent=rs.last_approved_trade||'—';
-  document.getElementById('lastReject').textContent=rs.last_rejection_reason||'—';
+  const paperMode=(rs.trading_mode||'').toLowerCase().includes('paper');
+  const govNote = paperMode ? '— (shown in live mode)' : '—';
+  document.getElementById('lastApproved').textContent=rs.last_approved_trade||govNote;
+  document.getElementById('lastReject').textContent=rs.last_rejection_reason||govNote;
   const ks=document.getElementById('killState');
   ks.textContent=s.kill_switch_active?'ON — restart needed':'Off (all clear)';
   ks.className='v '+(s.kill_switch_active?'neg':'pos');
