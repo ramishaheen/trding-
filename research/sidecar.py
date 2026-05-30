@@ -77,29 +77,47 @@ def fetch_headlines(max_items: int = 25) -> list[str]:
     return unique[: max_items * 2]
 
 
-def compute_market_summary() -> dict[str, Any]:
-    """Best-effort market stats from our own DB (OHLCV if present). Returns an
-    empty-ish summary if nothing is available — the classifier handles thin data
-    by returning a neutral, low-confidence signal."""
+def _recent_performance(limit: int = 50):
+    """Recent bot performance from the trade journal, so Claude knows how the
+    strategy has actually been doing. Best-effort."""
     dsn = os.environ.get("DATABASE_URL")
-    summary: dict[str, Any] = {"note": "summary best-effort; may be sparse"}
     if not dsn:
-        return summary
+        return None
     try:
         import psycopg
+        from analytics import overall
 
-        with psycopg.connect(dsn, connect_timeout=5) as conn:
-            with conn.cursor() as cur:
-                # Trade-derived recent P&L context if the freqtrade trades table
-                # is reachable in this DB; otherwise ignored.
-                cur.execute(
-                    "SELECT count(*) FROM information_schema.tables "
-                    "WHERE table_name = 'trades'"
-                )
-                has_trades = cur.fetchone()[0] > 0
-                summary["has_trade_table"] = bool(has_trades)
+        with psycopg.connect(dsn, connect_timeout=3) as conn, conn.cursor() as cur:
+            cur.execute("SELECT profit_ratio FROM trade_outcomes ORDER BY id DESC LIMIT %s",
+                        (limit,))
+            rows = cur.fetchall()
+        if not rows:
+            return None
+        return overall([{"profit_ratio": (r[0] or 0)} for r in rows])
     except Exception as exc:  # noqa: BLE001
-        logger.info("market summary DB read skipped: %s", exc)
+        logger.info("recent performance read skipped: %s", exc)
+        return None
+
+
+def compute_market_summary() -> dict[str, Any]:
+    """Trusted market context for the classifier: LIVE multi-timeframe price
+    structure (trend/volatility/levels/spread) per coin + recent bot performance.
+    Best-effort — any piece that can't be computed is simply omitted, and the
+    classifier still works off the headlines."""
+    summary: dict[str, Any] = {"note": "trusted live data; pieces may be omitted if unavailable"}
+
+    try:
+        from market_data import build_market_data
+
+        structure = build_market_data(_allowlist_pairs())
+        if structure:
+            summary["market_structure"] = structure
+    except Exception as exc:  # noqa: BLE001
+        logger.info("market structure skipped: %s", exc)
+
+    perf = _recent_performance()
+    if perf:
+        summary["recent_bot_performance"] = perf
     return summary
 
 
