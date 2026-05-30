@@ -30,6 +30,22 @@ services:
       timeout: 5s
       retries: 5
 
+  # One-shot DB migrator: applies research/schema.sql (idempotent — CREATE/ALTER
+  # IF NOT EXISTS) on every `up`, so schema changes reach an EXISTING database
+  # (the initdb script only runs on a fresh volume). Runs and exits.
+  migrate:
+    image: timescale/timescaledb:latest-pg16
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD:-change_me_please}
+    volumes:
+      - ./research/schema.sql:/schema.sql:ro
+    command: ["psql", "-h", "postgres", "-U", "${POSTGRES_USER:-trading}",
+              "-d", "${POSTGRES_DB:-trading}", "-v", "ON_ERROR_STOP=0", "-f", "/schema.sql"]
+    restart: "no"
+
   freqtrade:
     build:
       context: .

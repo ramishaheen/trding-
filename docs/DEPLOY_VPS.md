@@ -103,3 +103,17 @@ git pull && docker compose up -d --build   # update to the latest code
   **and** governor approval. The kill switch overrides all of it.
 - Keep your `.env` private (it holds your keys + dashboard password). It is never
   committed to git.
+
+## Database migrations on deploy
+
+`research/schema.sql` only runs automatically on a **fresh** database (initdb).
+For an EXISTING database, new columns are added by the idempotent `migrate`
+service. It runs on `docker compose up -d`, but to be 100% sure it applies on
+every auto-deploy, add this one line to your deploy step (right after `git pull`):
+
+```bash
+docker compose run --rm migrate
+```
+
+It's safe to re-run any time (all CREATE/ALTER are `IF NOT EXISTS`). This is what
+prevents "column does not exist" errors after a schema change.
